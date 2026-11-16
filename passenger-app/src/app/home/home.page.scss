@@ -1,0 +1,422 @@
+ion-content {
+  --background: #F8F3EA;
+  color: #2D262B;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.header-bar {
+  background: #B47792;
+  color: #FFFFFF;
+  padding: 16px 18px;
+  border-bottom: 4px solid #FA9EBC;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.app-subtitle {
+  margin: 2px 0 0 0;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
+.user-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-pill {
+  background: #FFDBD1;
+  color: #2D262B;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.server-box {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #FFDBD1;
+}
+
+.server-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #FFDBD1;
+  margin-bottom: 4px;
+}
+
+.server-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.server-input {
+  margin: 0 !important;
+  flex: 1;
+  font-size: 14px !important;
+  padding: 8px 10px !important;
+}
+
+.connect-btn {
+  white-space: nowrap;
+  padding: 8px 14px !important;
+}
+
+.page-container {
+  padding: 16px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.theme-card {
+  background: #FFFFFF;
+  border: 2px solid #FA9EBC;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 16px;
+  color: #2D262B;
+  box-shadow: 0 4px 12px rgba(180, 119, 146, 0.14);
+}
+
+.waiting-card {
+  background: #FFDBD1;
+  border-color: #B47792;
+}
+
+.section-header {
+  margin: 18px 0 10px 0;
+}
+
+.step-badge {
+  display: inline-block;
+  background: #B47792;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.card-title {
+  margin: 0 0 6px 0;
+  color: #B47792;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.waiting-card .card-title {
+  color: #2D262B;
+}
+
+.helper-text {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #2D262B;
+  line-height: 1.4;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mode-tab-btn {
+  flex: 1;
+  padding: 12px 10px;
+  border-radius: 12px;
+  border: 2px solid #B47792;
+  background: #F8F3EA;
+  color: #2D262B;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.active-tab {
+  background: #B47792;
+  color: #FFFFFF;
+}
+
+.field-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2D262B;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.input-box {
+  width: 100%;
+  padding: 12px 14px;
+  margin: 2px 0 8px 0;
+  border: 2px solid #B47792;
+  border-radius: 10px;
+  background: #F8F3EA;
+  color: #2D262B;
+  font-size: 16px;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.trip-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trip-col {
+  flex: 1;
+  min-width: 240px;
+}
+
+.fare-summary-box {
+  background: #FFFFFF;
+  border: 2px solid #B47792;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+
+.fare-row {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #FA9EBC;
+}
+
+.fare-highlight {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-top: 10px;
+  gap: 10px;
+}
+
+.fare-item {
+  text-align: center;
+}
+
+.fare-caption {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2D262B;
+}
+
+.fare-price {
+  font-size: 22px;
+  font-weight: 800;
+  color: #B47792;
+}
+
+.discount-price {
+  color: #1b5e20;
+}
+
+.fare-divider {
+  width: 2px;
+  height: 36px;
+  background: #FA9EBC;
+}
+
+.top-bus-card {
+  border: 3px solid #B47792;
+  background: #FFFDFB;
+}
+
+.next-ride-ribbon {
+  background: #B47792;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  display: inline-block;
+}
+
+.bus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bus-title {
+  margin: 0;
+  color: #B47792;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.crew-text {
+  margin: 4px 0 0 0;
+  font-size: 14px;
+  color: #2D262B;
+}
+
+.status-pill {
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.status-available {
+  background: #c8e6c9;
+  color: #1b5e20;
+}
+
+.status-standing {
+  background: #ffe0b2;
+  color: #e65100;
+}
+
+.status-full {
+  background: #ffcdd2;
+  color: #b71c1c;
+}
+
+.eta-banner {
+  background: #FFDBD1;
+  color: #2D262B;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 15px;
+  margin: 10px 0;
+  border: 1.5px solid #FA9EBC;
+}
+
+.capacity-grid {
+  display: flex;
+  gap: 10px;
+}
+
+.capacity-box {
+  flex: 1;
+  background: #F8F3EA;
+  border: 1.5px solid #FA9EBC;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+}
+
+.cap-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cap-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #B47792;
+}
+
+.pink-btn {
+  background: #FA9EBC;
+  color: #2D262B;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mauve-btn {
+  background: #B47792;
+  color: #FFFFFF;
+  border: none;
+  padding: 14px 18px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.big-action-btn {
+  width: 100%;
+  margin-top: 10px;
+  min-height: 50px;
+}
+
+.small-btn {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stop-chip-btn {
+  background: #F8F3EA;
+  color: #2D262B;
+  border: 1.5px solid #B47792;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.active-stop-chip {
+  background: #FA9EBC;
+  border-width: 2px;
+}
+
+#passengerMap {
+  height: 340px;
+  width: 100%;
+  border-radius: 14px;
+  border: 2px solid #B47792;
+  z-index: 1;
+}
+
+.error-box {
+  background: #ffcdd2;
+  color: #b71c1c;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+.success-box {
+  background: #c8e6c9;
+  color: #1b5e20;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 10px;
+}

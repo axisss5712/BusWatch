@@ -1,0 +1,287 @@
+<ion-header>
+    <ion-title></ion-title>
+</ion-header>
+<ion-content>
+  <!-- Top Cooperative Header Bar -->
+  <div class="header-bar">
+    <div class="header-top">
+      <div>
+        <h1 class="app-title">Conductor Ticketing & GPS</h1>
+        <p class="app-subtitle">Bongabon Primemovers Transport Service Cooperative</p>
+      </div>
+      @if (conductor) {
+        <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+      }
+    </div>
+
+    <!-- Editable Server IP Box (Changeable Anytime on LAN) -->
+    <div class="server-box">
+      <label class="server-label" for="conductor-server-url">
+        ⚙️ Server IP Address (Change anytime to match Wi-Fi / Hotspot):
+      </label>
+      <div class="server-bar">
+        <input
+          id="conductor-server-url"
+          class="input-box server-input"
+          [(ngModel)]="serverUrl"
+          (change)="updateServerUrl(serverUrl)"
+          placeholder="http://192.168.1.9:8000"
+        />
+        <button type="button" class="pink-btn connect-btn" (click)="saveAndSync()">
+          Save & Sync
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-container">
+    <!-- 1. SEPARATED CONDUCTOR LOG-IN vs. REGISTER NEW CONDUCTOR -->
+    @if (!conductor) {
+      <div class="theme-card">
+        <div class="mode-tabs">
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="authMode === 'login'"
+            (click)="setAuthMode('login')"
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="authMode === 'signup'"
+            (click)="setAuthMode('signup')"
+          >
+            Register Account
+          </button>
+        </div>
+
+        @if (authMode === 'login') {
+          <h2 class="card-title">Log In</h2>
+          <p class="helper-text">Select your assigned mini-bus unit and log in to start issuing tickets.</p>
+
+          <label class="field-label" for="login-bus">Select Your Assigned Mini-Bus:</label>
+          <select id="login-bus" class="input-box" [(ngModel)]="selectedBusId">
+            @for (b of availableBuses; track b.bus_id) {
+              <option [value]="b.bus_id">
+                {{ b.bus_id }} — Plate: {{ b.plate_number }} ({{ b.driver_name }})
+              </option>
+            }
+          </select>
+
+          <label class="field-label" for="cond-username">Employee Username:</label>
+          <input
+            id="cond-username"
+            class="input-box"
+            [(ngModel)]="username"
+            placeholder="e.g. conductor1"
+          />
+
+          <label class="field-label" for="cond-password">Password:</label>
+          <input
+            id="cond-password"
+            class="input-box"
+            type="password"
+            [(ngModel)]="password"
+            placeholder="Enter your password"
+          />
+
+          <button type="button" class="mauve-btn big-action-btn" (click)="login()">
+            Start Shift & Lock Mini-Bus Unit
+          </button>
+        }
+
+        @if (authMode === 'signup') {
+          <h2 class="card-title">Register New Account</h2>
+          <p class="helper-text">Fill in the boxes below to register a new conductor account.</p>
+
+          <label class="field-label" for="reg-fullname">Conductor Full Name:</label>
+          <input
+            id="reg-fullname"
+            class="input-box"
+            [(ngModel)]="fullName"
+            placeholder="e.g. Carlo Reyes"
+          />
+
+          <label class="field-label" for="reg-bus">Assigned Mini-Bus Unit:</label>
+          <select id="reg-bus" class="input-box" [(ngModel)]="selectedBusId">
+            @for (b of availableBuses; track b.bus_id) {
+              <option [value]="b.bus_id">
+                {{ b.bus_id }} — Plate: {{ b.plate_number }}
+              </option>
+            }
+          </select>
+
+          <label class="field-label" for="reg-username">Choose Employee Username:</label>
+          <input
+            id="reg-username"
+            class="input-box"
+            [(ngModel)]="username"
+            placeholder="e.g. conductor6"
+          />
+
+          <label class="field-label" for="reg-password">Choose Password:</label>
+          <input
+            id="reg-password"
+            class="input-box"
+            type="password"
+            [(ngModel)]="password"
+            placeholder="Create a password"
+          />
+
+          <button type="button" class="mauve-btn big-action-btn" (click)="signup()">
+            Create Account & Start Shift
+          </button>
+        }
+
+        @if (authError) {
+          <div class="error-box">{{ authError }}</div>
+        }
+      </div>
+    }
+
+    <!-- 2. ACTIVE CONDUCTOR WORKSPACE -->
+    @if (conductor) {
+      <!-- LIVE BUS STATUS & DAILY COLLECTION SUMMARY -->
+      <div class="theme-card telemetry-card">
+        <div class="header-top">
+          <div>
+            <span class="step-badge">ACTIVE UNIT</span>
+            <h2 class="card-title" style="margin: 0; color: #2D262B;">
+              {{ selectedBusId }} ({{ activeBus?.status || 'Seats Available' }})
+            </h2>
+          </div>
+          <span class="gps-pill">📡 {{ gpsStatus }}</span>
+        </div>
+
+        <!-- Big 3-Box Load Counter -->
+        <div class="stat-grid">
+          <div class="stat-box">
+            <span class="stat-label">Onboard Now</span>
+            <strong class="stat-num">{{ activeBus?.current_passengers || 0 }}</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Seats Available</span>
+            <strong class="stat-num">{{ activeBus?.available_seats || 0 }}</strong>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Standing</span>
+            <strong class="stat-num">{{ activeBus?.standing_count || 0 }}</strong>
+          </div>
+        </div>
+
+        <div class="remittance-strip">
+          <b>Today's Collection:</b> ₱{{ formatMoney(remittance.total_fare_collected) }}
+          &nbsp;|&nbsp; <b>Tickets:</b> {{ remittance.total_tickets }}
+          &nbsp;|&nbsp; <b>Total Pax:</b> {{ remittance.total_passengers_carried }}
+        </div>
+      </div>
+
+      <!-- STEP 1: ISSUE PASSENGER TICKET -->
+      <div class="theme-card">
+        <h2 class="card-title">Issue Passenger Ticket</h2>
+
+        <label class="field-label" for="cond-origin-stop">Boarding At (Origin Stop):</label>
+        <select id="cond-origin-stop" class="input-box" [(ngModel)]="originStopId">
+          @for (s of stops; track s.stop_id) {
+            <option [ngValue]="s.stop_id">{{ s.stop_name }} ({{ s.municipality }})</option>
+          }
+        </select>
+
+        <label class="field-label" for="cond-dest-stop">Dropping Off At (Destination Stop):</label>
+        <select id="cond-dest-stop" class="input-box" [(ngModel)]="destStopId">
+          @for (s of stops; track s.stop_id) {
+            <option [ngValue]="s.stop_id">{{ s.stop_name }} ({{ s.municipality }})</option>
+          }
+        </select>
+
+        <!-- Large Touch Toggle Buttons for Fare Type -->
+        <div class="field-label">Select Fare Type:</div>
+        <div class="mode-tabs">
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="passengerType === 'Regular'"
+            (click)="setPassengerType('Regular')"
+          >
+            Regular Fare
+          </button>
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="passengerType === 'Discounted'"
+            (click)="setPassengerType('Discounted')"
+          >
+            20% Discount (Senior / Student / PWD)
+          </button>
+        </div>
+
+        <!-- Large Tactile [ - ] and [ + ] Counter for Number of Passengers -->
+        <div class="field-label">Number of Passengers on This Ticket:</div>
+        <div class="counter-row">
+          <button type="button" class="counter-btn" (click)="adjustPassengerCount(-1)">−</button>
+          <div class="counter-display">{{ passengerCount }} Passenger(s)</div>
+          <button type="button" class="counter-btn" (click)="adjustPassengerCount(1)">+</button>
+        </div>
+
+        <!-- Live Distance & Total Fare Box -->
+        <div class="fare-preview-box">
+          <div class="fare-preview-row">
+            <span>Trip Distance: <b>{{ formatMoney(previewDistanceKm()) }} km</b></span>
+            <span>
+              {{ passengerType === 'Discounted' ? '20% Discount Applied' : 'Standard Rate' }}
+            </span>
+          </div>
+          <div class="fare-total-line">
+            <span>Total Amount to Collect:</span>
+            <strong class="total-amount">₱{{ formatMoney(previewTotalFare()) }}</strong>
+          </div>
+        </div>
+
+        <button type="button" class="mauve-btn big-action-btn" (click)="issueTicket()">
+          Issue Ticket & Add +{{ passengerCount }} Passenger(s)
+        </button>
+
+        @if (ticketSuccessMsg) {
+          <div class="success-box">{{ ticketSuccessMsg }}</div>
+        }
+      </div>
+
+      <!-- STEP 2: 100% AUTOMATIC GPS SMART ALIGHTING MONITOR (NO MANUAL BUTTON) -->
+      <div class="theme-card">
+        <div class="step-badge">AUTOMATIC GPS GEOFENCE</div>
+        <h2 class="card-title">Upcoming Drop-Offs</h2>
+
+
+        @if (autoAlightBanner) {
+          <div class="success-box" style="margin-bottom: 10px;">
+            {{ autoAlightBanner }}
+          </div>
+        }
+
+        @if (dropoffs.length === 0) {
+          <div class="empty-dropoff">
+            No active onboard tickets waiting for drop-off.
+          </div>
+        }
+
+        @for (d of dropoffs; track d.destination_stop_id) {
+          <div class="peach-box dropoff-row">
+            <div>
+              <strong style="font-size: 16px; color: #B47792;">
+                {{ d.stop_name }}
+              </strong>
+              <div style="font-size: 15px; font-weight: 700; margin-top: 2px;">
+                {{ d.passengers_dropping_off }} passenger(s) scheduled to alight here
+              </div>
+            </div>
+            <span class="gps-pill">
+              Auto-Alights on Arrival
+            </span>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</ion-content>

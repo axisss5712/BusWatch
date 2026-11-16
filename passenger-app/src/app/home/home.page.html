@@ -1,0 +1,325 @@
+<ion-header>
+    <ion-title></ion-title>
+</ion-header>
+
+<ion-content>
+  <!-- Top Cooperative Header Bar -->
+  <div class="header-bar">
+    <div class="header-top">
+      <div>
+        <h1 class="app-title">BusWatch</h1>
+        <p class="app-subtitle">Bongabon • Palayan City • Cabanatuan Terminal</p>
+      </div>
+      @if (loggedInUser) {
+        <div class="user-strip">
+          <span class="user-pill">👤 {{ loggedInUser.full_name }}</span>
+          <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+        </div>
+      }
+    </div>
+
+    <!-- Clearly Labeled Server IP Bar -->
+    <div class="server-box">
+      <label class="server-label" for="passenger-server-url">
+        Server IP Address:
+      </label>
+      <div class="server-bar">
+        <input
+          id="passenger-server-url"
+          class="input-box server-input"
+          [(ngModel)]="serverUrl"
+          (change)="updateServerUrl(serverUrl)"
+          placeholder="http://192.168.1.9:8000"
+        />
+        <button type="button" class="pink-btn connect-btn" (click)="saveAndConnect()">
+          Save & Connect
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-container">
+    <!-- 1. SEPARATED COMMUTER LOG-IN vs. CREATE ACCOUNT CARD -->
+    @if (!loggedInUser) {
+      <div class="theme-card auth-card">
+        <div class="mode-tabs">
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="authMode === 'login'"
+            (click)="setAuthMode('login')"
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            class="mode-tab-btn"
+            [class.active-tab]="authMode === 'signup'"
+            (click)="setAuthMode('signup')"
+          >
+            Create New Account
+          </button>
+        </div>
+
+        @if (authMode === 'login') {
+          <h2 class="card-title">Welcome Back!</h2>
+          <p class="helper-text">Enter your username and password to see live approaching buses.</p>
+
+          <label class="field-label" for="login-username">Your Username:</label>
+          <input
+            id="login-username"
+            class="input-box"
+            [(ngModel)]="authUsername"
+            placeholder="Enter your username"
+          />
+
+          <label class="field-label" for="login-password">Your Password:</label>
+          <input
+            id="login-password"
+            class="input-box"
+            type="password"
+            [(ngModel)]="authPassword"
+            placeholder="Enter your password"
+          />
+
+          <button type="button" class="mauve-btn big-action-btn" (click)="login()">
+            Log In to View Buses
+          </button>
+        }
+
+        @if (authMode === 'signup') {
+          <h2 class="card-title">Create Your Account</h2>
+          <p class="helper-text">Fill in the boxes below once to create your account.</p>
+
+          <label class="field-label" for="signup-fullname">Your Full Name:</label>
+          <input
+            id="signup-fullname"
+            class="input-box"
+            [(ngModel)]="authFullName"
+            placeholder="e.g. Maria Santos"
+          />
+
+          <label class="field-label" for="signup-username">Choose a Username:</label>
+          <input
+            id="signup-username"
+            class="input-box"
+            [(ngModel)]="authUsername"
+            placeholder="e.g. maria123"
+          />
+
+          <label class="field-label" for="signup-password">Choose a Password:</label>
+          <input
+            id="signup-password"
+            class="input-box"
+            type="password"
+            [(ngModel)]="authPassword"
+            placeholder="Create a password"
+          />
+
+          <button type="button" class="mauve-btn big-action-btn" (click)="signup()">
+            Create Account & Continue
+          </button>
+        }
+
+        @if (authMessage) {
+          <div class="error-box">{{ authMessage }}</div>
+        }
+      </div>
+    }
+
+    <!-- 2. LOGGED-IN COMMUTER DASHBOARD -->
+    @if (loggedInUser) {
+      <!-- STEP 1: CHOOSE WAITING STOP (GIVEN STOPS OR EXACT LOCATION) & DESTINATION -->
+      <div class="theme-card waiting-card">
+        <h2 class="card-title">Where Are You Travelling Today?</h2>
+        <p class="helper-text">
+          Choose one of the official stops below—or select <b> My Location</b> if you are waiting along the highway.
+        </p>
+
+        <div class="trip-grid">
+          <div class="trip-col">
+            <label class="field-label" for="origin-stop">I Am Waiting At (Origin Stop):</label>
+            <select
+              id="origin-stop"
+              class="input-box"
+              [(ngModel)]="selectedStopId"
+              (ngModelChange)="onStopChange()"
+            >
+              <!-- Option for Exact Passenger Location -->
+              <option [ngValue]="0">
+                 My Location
+              </option>
+              <!-- All Given Official Stops Kept for Ease of Use -->
+              @for (s of stops; track s.stop_id) {
+                <option [ngValue]="s.stop_id">
+                  {{ s.stop_name }} ({{ s.municipality }})
+                </option>
+              }
+            </select>
+
+          </div>
+
+          <div class="trip-col">
+            <label class="field-label" for="destination-stop">I Am Going To (Destination Stop):</label>
+            <select id="destination-stop" class="input-box" [(ngModel)]="destinationStopId">
+              @for (s of stops; track s.stop_id) {
+                <option [ngValue]="s.stop_id">
+                  {{ s.stop_name }} ({{ s.municipality }})
+                </option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <!-- Clear Elderly-Friendly Fare & Distance Summary Box -->
+        @if (selectedStopId === 0 || selectedStopId !== destinationStopId) {
+          <div class="fare-summary-box">
+            <div class="fare-row">
+              <span><b>Direction:</b> {{ getPassengerDirectionLabel() }}</span>
+              <span><b>Distance:</b> {{ getPassengerTripDistance().toFixed(1) }} km</span>
+            </div>
+            <div class="fare-highlight">
+              <div class="fare-item">
+                <span class="fare-caption">Regular Fare</span>
+                <strong class="fare-price">₱{{ getPassengerRegularFare().toFixed(2) }}</strong>
+              </div>
+              <div class="fare-divider"></div>
+              <div class="fare-item">
+                <span class="fare-caption">Senior / Student / PWD (20% Off)</span>
+                <strong class="fare-price discount-price">
+                  ₱{{ Math.round(getPassengerRegularFare() * 0.8).toFixed(2) }}
+                </strong>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="error-box">
+            Please choose a different Origin Stop and Destination Stop to calculate your fare.
+          </div>
+        }
+      </div>
+
+      <!-- STEP 2: INTERACTIVE LIVE MAP -->
+      <div class="theme-card">
+        <h2 class="card-title">Live Route Map</h2>
+        <p class="helper-text">
+          Tap any button below to zoom to a stop, or tap directly on the map to wait at your exact spot:
+        </p>
+
+        <div class="badge-row" style="margin-bottom: 10px;">
+          <button
+            type="button"
+            class="stop-chip-btn"
+            [class.active-stop-chip]="selectedStopId === 0"
+            (click)="selectExactLocationOption()"
+          >
+             My Location
+          </button>
+          @for (s of stops; track s.stop_id) {
+            <button
+              type="button"
+              class="stop-chip-btn"
+              [class.active-stop-chip]="s.stop_id === selectedStopId"
+              (click)="focusStop(s)"
+            >
+               {{ s.stop_name }}
+            </button>
+          }
+        </div>
+
+        <div id="passengerMap"></div>
+      </div>
+
+      <!-- STEP 3: APPROACHING MINI-BUSES (CLOSEST PINNED FIRST) -->
+      <div class="section-header">
+        <h2 class="card-title" style="margin-bottom: 2px;">Approaching Mini-Buses (Closest First)</h2>
+        <p class="helper-text">The mini-bus closest to your waiting location is automatically pinned at the top.</p>
+      </div>
+
+      @for (b of getSortedBuses(); track b.bus_id; let idx = $index) {
+        <div class="theme-card bus-card" [class.top-bus-card]="idx === 0">
+          @if (idx === 0) {
+            <div class="next-ride-ribbon">NEXT MINI-BUS FOR YOUR LOCATION</div>
+          }
+
+          <div class="bus-header">
+            <div>
+              <h3 class="bus-title">{{ b.bus_id }} (Plate: {{ b.plate_number }})</h3>
+              <p class="crew-text">
+                <b>Driver:</b> {{ b.driver_name }} &nbsp;|&nbsp; <b>Conductor:</b> {{ b.conductor_name }}
+              </p>
+            </div>
+            <span
+              class="status-pill"
+              [ngClass]="{
+                'status-available': b.status === 'Seats Available',
+                'status-standing': b.status === 'Standing Only',
+                'status-full': b.status === 'Full Capacity'
+              }"
+            >
+              {{ b.status }}
+            </span>
+          </div>
+
+          <div class="eta-banner">
+            <b>Arrival Status:</b> {{ computeEtaBadge(b) }}
+          </div>
+
+          <div class="capacity-grid">
+            <div class="capacity-box">
+              <span class="cap-label">Seats Available</span>
+              <strong class="cap-value">{{ b.available_seats }} of {{ b.max_seated }}</strong>
+            </div>
+            <div class="capacity-box">
+              <span class="cap-label">Standing Passengers</span>
+              <strong class="cap-value">{{ b.standing_count }} of {{ b.max_standing }}</strong>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- STEP 4: CATEGORIZED PASSENGER FEEDBACK & LOST ITEM REPORTING -->
+      <div class="theme-card">
+        <h2 class="card-title">Report a Lost Item or Send Feedback</h2>
+        <p class="helper-text">
+          Left something on the bus or have a concern? Send a direct message to the Cooperative Dispatcher.
+        </p>
+
+        <label class="field-label" for="fb-bus">1. Select Mini-Bus Unit:</label>
+        <select id="fb-bus" class="input-box" [(ngModel)]="fbBusId">
+          @for (b of buses; track b.bus_id) {
+            <option [value]="b.bus_id">
+              {{ b.bus_id }} — Plate: {{ b.plate_number }} (Driver: {{ b.driver_name }})
+            </option>
+          }
+        </select>
+
+        <label class="field-label" for="fb-category">Type of Concern:</label>
+        <select id="fb-category" class="input-box" [(ngModel)]="fbCategory">
+          <option value="Left Item / Lost & Found">Left Item / Lost & Found</option>
+          <option value="Driver/Conductor Courtesy">Driver / Conductor Courtesy</option>
+          <option value="Overloading">Overloading Concern</option>
+          <option value="Mechanical Delay">Mechanical Delay</option>
+          <option value="Other">Other Concern</option>
+        </select>
+
+        <label class="field-label" for="fb-message">Details of Your Report:</label>
+        <textarea
+          id="fb-message"
+          class="input-box"
+          rows="3"
+          [(ngModel)]="fbMessage"
+          placeholder="Type what happened or describe your lost item here..."
+        ></textarea>
+
+        <button type="button" class="mauve-btn big-action-btn" (click)="submitFeedback()">
+          Send Report to Cooperative Dispatcher
+        </button>
+
+        @if (fbStatus) {
+          <div class="success-box">{{ fbStatus }}</div>
+        }
+      </div>
+    }
+  </div>
+</ion-content>
