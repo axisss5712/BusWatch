@@ -1,5 +1,5 @@
 <ion-header class="ion-no-border">
-  <ion-toolbar class="buswatch-toolbar">
+  <ion-toolbar class="coop-toolbar">
     <div class="header-bar">
       <div class="header-top">
         <div>
@@ -13,10 +13,13 @@
             title="Server Settings"
             (click)="showServerConfig = !showServerConfig"
           >
-            ⚙️
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="36">
+              <circle cx="256" cy="256" r="96"/>
+              <path d="M470.39 300l-.47-.38-31.56-24.75a16.11 16.11 0 01-6.1-13.33v-11.56a16 16 0 016.11-13.22L469.92 212l.47-.38a26.68 26.68 0 005.9-34.06l-42.71-73.9a1.59 1.59 0 01-.13-.22A26.86 26.86 0 00401 92.14l-.35.13-37.1 14.93a15.94 15.94 0 01-14.47-1.29q-4.92-3.1-10-5.86a15.94 15.94 0 01-8.19-11.82l-5.59-39.59-.12-.72A27.22 27.22 0 00298.76 26h-85.52a26.92 26.92 0 00-26.45 22.39l-.09.56-5.57 39.67a16 16 0 01-8.13 11.82 175.21 175.21 0 00-10 5.82 15.92 15.92 0 01-14.43 1.27l-37.13-15-.35-.14a26.87 26.87 0 00-32.48 11.34l-.13.22-42.77 73.95a26.71 26.71 0 005.9 34.1l.47.38 31.56 24.75a16.11 16.11 0 016.1 13.33v11.56a16 16 0 01-6.11 13.22L42.08 300l-.47.38a26.68 26.68 0 00-5.9 34.06l42.71 73.9a1.59 1.59 0 01.13.22A26.86 26.86 0 00111 419.86l.35-.13 37.1-14.93a15.94 15.94 0 0114.47 1.29q4.92 3.1 10 5.86a15.94 15.94 0 018.19 11.82l5.56 39.59.12.72A27.22 27.22 0 00213.24 486h85.52a26.92 26.92 0 0026.45-22.39l.09-.56 5.57-39.67a16 16 0 018.18-11.82c3.42-1.84 6.76-3.79 10-5.82a15.92 15.92 0 0114.43-1.27l37.13 14.95.35.14a26.85 26.85 0 0032.48-11.34 2.53 2.53 0 01.13-.22l42.71-73.89a26.7 26.7 0 00-5.89-34.11z"/>
+            </svg>
           </button>
           @if (loggedInUser) {
-            <span class="user-pill"> {{ loggedInUser.full_name }}</span>
+            <span class="user-pill">{{ loggedInUser.full_name }}</span>
             <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
           }
         </div>
@@ -141,7 +144,7 @@
       <div class="theme-card waiting-card">
         <h2 class="card-title">Where Are You Travelling Today?</h2>
         <p class="helper-text">
-          Choose one of the official stops below—or select <b> My Location</b> if you are waiting along the highway.
+          Choose one of the official stops below or select <b>My Location</b> if you are waiting along the highway.
         </p>
 
         <div class="trip-grid">
@@ -155,7 +158,7 @@
             >
               <!-- Option for Exact Passenger Location -->
               <option [ngValue]="0">
-                 My Location
+                My Location
               </option>
               <!-- All Given Official Stops Kept for Ease of Use -->
               @for (s of stops; track s.stop_id) {
@@ -164,7 +167,6 @@
                 </option>
               }
             </select>
-
           </div>
 
           <div class="trip-col">
@@ -214,6 +216,24 @@
           Tap any button below to zoom to a stop, or tap directly on the map to wait at your exact spot:
         </p>
 
+        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+          <input
+            class="input-box"
+            style="margin-bottom: 0; flex: 1;"
+            [(ngModel)]="mapSearchQuery"
+            (keyup.enter)="searchLocationOnMap()"
+            placeholder="Search location..."
+          />
+          <button
+            type="button"
+            class="mauve-btn"
+            style="padding: 0 16px; border-radius: 10px; font-weight: 700;"
+            (click)="searchLocationOnMap()"
+          >
+            Search
+          </button>
+        </div>
+
         <div class="badge-row" style="margin-bottom: 10px;">
           <button
             type="button"
@@ -221,7 +241,7 @@
             [class.active-stop-chip]="selectedStopId === 0"
             (click)="selectExactLocationOption()"
           >
-             My Location
+            My Location
           </button>
           @for (s of stops; track s.stop_id) {
             <button
@@ -230,7 +250,7 @@
               [class.active-stop-chip]="s.stop_id === selectedStopId"
               (click)="focusStop(s)"
             >
-               {{ s.stop_name }}
+              {{ s.stop_name }}
             </button>
           }
         </div>

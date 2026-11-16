@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import type { OnInit, OnDestroy } from '@angular/core';
+import type { OnDestroy, OnInit } from '@angular/core';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Geolocation } from '@capacitor/geolocation';
@@ -10,7 +10,7 @@ import { IonContent, IonHeader, IonToolbar } from '@ionic/angular';
   templateUrl: 'home.page.html',
   styleUrls: ['home.page.scss'],
   standalone: true,
-  imports: [IonToolbar, IonHeader, CommonModule, FormsModule, IonContent],
+  imports: [IonContent, IonToolbar, IonHeader, IonToolbar, IonHeader, CommonModule, FormsModule, IonContent],
 })
 export class HomePage implements OnInit, OnDestroy {
   serverUrl: string = 'http://192.168.1.8:8000';
@@ -43,7 +43,79 @@ export class HomePage implements OnInit, OnDestroy {
 
   gpsStatus: string = 'GPS Standby';
   private gpsTimer?: any;
+
   showServerConfig: boolean = false;
+  originSearchQuery: string = '';
+  destSearchQuery: string = '';
+  originDropdownOpen: boolean = false;
+  destDropdownOpen: boolean = false;
+
+  getStopLabel(stopId: number): string {
+    const s = this.stops.find((item) => item.stop_id === Number(stopId));
+    return s ? `${s.stop_name} (${s.municipality})` : 'Select location';
+  }
+
+  toggleOriginDropdown(): void {
+    this.originDropdownOpen = !this.originDropdownOpen;
+    if (this.originDropdownOpen) {
+      this.destDropdownOpen = false;
+      this.originSearchQuery = '';
+    }
+  }
+
+  toggleDestDropdown(): void {
+    this.destDropdownOpen = !this.destDropdownOpen;
+    if (this.destDropdownOpen) {
+      this.originDropdownOpen = false;
+      this.destSearchQuery = '';
+    }
+  }
+
+  selectOriginStop(stopId: number): void {
+    this.originStopId = stopId;
+    this.originDropdownOpen = false;
+    this.originSearchQuery = '';
+  }
+
+  selectDestStop(stopId: number): void {
+    this.destStopId = stopId;
+    this.destDropdownOpen = false;
+    this.destSearchQuery = '';
+  }
+
+  getFilteredOriginStops(): any[] {
+    const q = this.originSearchQuery.trim().toLowerCase();
+    if (!q) return this.stops;
+    return this.stops.filter(
+      (s) =>
+        s.stop_name.toLowerCase().includes(q) ||
+        s.municipality.toLowerCase().includes(q)
+    );
+  }
+
+  getFilteredDestStops(): any[] {
+    const q = this.destSearchQuery.trim().toLowerCase();
+    if (!q) return this.stops;
+    return this.stops.filter(
+      (s) =>
+        s.stop_name.toLowerCase().includes(q) ||
+        s.municipality.toLowerCase().includes(q)
+    );
+  }
+
+  onOriginSearchChange(): void {
+    const matches = this.getFilteredOriginStops();
+    if (matches.length > 0) {
+      this.originStopId = matches[0].stop_id;
+    }
+  }
+
+  onDestSearchChange(): void {
+    const matches = this.getFilteredDestStops();
+    if (matches.length > 0) {
+      this.destStopId = matches[0].stop_id;
+    }
+  }
 
   ngOnInit(): void {
     const savedIp = localStorage.getItem('custom_server_url');
@@ -112,6 +184,7 @@ export class HomePage implements OnInit, OnDestroy {
     this.updateServerUrl(this.serverUrl);
     const uname = this.username.trim();
     const pword = this.password.trim();
+
     if (!uname || !pword) {
       this.authError = 'Please enter both your Employee Username and Password.';
       return;
@@ -147,6 +220,7 @@ export class HomePage implements OnInit, OnDestroy {
     const uname = this.username.trim();
     const pword = this.password.trim();
     const fname = this.fullName.trim() || uname;
+
     if (!uname || !pword) {
       this.authError = 'Please choose an Employee Username and Password.';
       return;
@@ -220,7 +294,6 @@ export class HomePage implements OnInit, OnDestroy {
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
     const straightKm = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    // 1.1625 road factor -> Bongabon Terminal to Cabanatuan Terminal = 30.20 km
     return straightKm * 1.1625;
   }
 
@@ -236,9 +309,9 @@ export class HomePage implements OnInit, OnDestroy {
     if (dist === 0) return 0;
     let unitFare = 15.0 + Math.max(0, dist - 4.0) * 2.5763;
     if (this.passengerType === 'Discounted') {
-      unitFare = Math.round(unitFare * 0.8); 
+      unitFare = Math.round(unitFare * 0.8);
     } else {
-      unitFare = Math.round(unitFare);     
+      unitFare = Math.round(unitFare);
     }
     return unitFare * Math.max(1, Number(this.passengerCount || 1));
   }
@@ -247,7 +320,6 @@ export class HomePage implements OnInit, OnDestroy {
     this.ticketSuccessMsg = '';
     const count = Math.max(1, Number(this.passengerCount || 1));
     const total = this.formatMoney(this.previewTotalFare());
-
     const res = await fetch(`${this.serverUrl}/api/tickets/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -304,11 +376,10 @@ export class HomePage implements OnInit, OnDestroy {
         }),
       });
 
-      // Automatically alight ticketed passengers when within 180m of their destination stop
       for (const d of this.dropoffs) {
         if (this.haversineKm(lat, lng, Number(d.lat), Number(d.lng)) <= 0.18) {
           await this.clearDropoff(d.destination_stop_id);
-          this.autoAlightBanner = `🔔 Auto-Alighted ${d.passengers_dropping_off} passenger(s) at ${d.stop_name}!`;
+          this.autoAlightBanner = `Auto-Alighted ${d.passengers_dropping_off} passenger(s) at ${d.stop_name}!`;
         }
       }
       await this.refreshAll();

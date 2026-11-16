@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import type { OnDestroy, OnInit } from '@angular/core';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { IonContent, IonHeader, IonTitle, IonToolbar} from '@ionic/angular';
+import { IonContent, IonHeader, IonToolbar } from '@ionic/angular';
 import * as L from 'leaflet';
 
 type GeolocationPosition = {
@@ -68,7 +68,7 @@ const Geolocation = {
   templateUrl: 'home.page.html',
   styleUrls: ['home.page.scss'],
   standalone: true,
-  imports: [IonToolbar, IonTitle, IonHeader, CommonModule, FormsModule, IonContent],
+  imports: [IonToolbar, IonHeader, CommonModule, FormsModule, IonContent],
 })
 export class HomePage implements OnInit, OnDestroy {
   protected readonly Math = Math;
@@ -85,11 +85,9 @@ export class HomePage implements OnInit, OnDestroy {
   stops: any[] = [];
   buses: any[] = [];
 
-  // selectedStopId: 1..N = Official Stops, 0 = Passenger's Exact Location
   selectedStopId: number = 1;
   destinationStopId: number = 6;
 
-  // Exact Passenger Location state (when selectedStopId === 0)
   customLat: number = 15.5565427;
   customLng: number = 121.0925970;
   exactLocationStatus: string = 'Using your pinned waiting spot';
@@ -104,13 +102,55 @@ export class HomePage implements OnInit, OnDestroy {
   private stopMarkers: L.Layer[] = [];
   private exactLocationMarker?: L.Marker;
   private busVectors: {
-    [key: string]: { lat: number; lng: number; dLat: number; dLng: number };
+    [key: string]: {
+      lat: number;
+      lng: number;
+      dLat: number;
+      dLng: number;
+      timestamp: number;
+      speedKmh: number;
+    };
   } = {};
   private routePolyline?: L.Polyline;
   private pollTimer?: any;
   private stopPollCounter: number = 0;
   private watchId: string | null = null;
   showServerConfig: boolean = false;
+  mapSearchQuery: string = '';
+
+  async searchLocationOnMap(): Promise<void> {
+    const q = this.mapSearchQuery.trim();
+    if (!q || !this.map) return;
+
+    const qLower = q.toLowerCase();
+    const matchedStop = this.stops.find(
+      (s) =>
+        s.stop_name.toLowerCase().includes(qLower) ||
+        s.municipality.toLowerCase().includes(qLower)
+    );
+    if (matchedStop) {
+      this.focusStop(matchedStop);
+      return;
+    }
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        q + ', Nueva Ecija, Philippines'
+      )}&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        this.customLat = parseFloat(data[0].lat);
+        this.customLng = parseFloat(data[0].lon);
+        this.selectedStopId = 0;
+        const shortLabel = data[0].display_name.split(',')[0];
+        this.exactLocationStatus = `Pinned location: ${shortLabel}`;
+        this.updateExactLocationMarker(true);
+      }
+    } catch {
+      // Ignore offline errors
+    }
+  }
 
   ngOnInit(): void {
     const savedIp = localStorage.getItem('custom_server_url');
@@ -188,7 +228,6 @@ export class HomePage implements OnInit, OnDestroy {
         this.syncAll();
         this.pollTimer = setInterval(() => {
           this.syncBuses();
-          // Also check every ~10 seconds if Dispatcher added a new stop on the map
           this.stopPollCounter++;
           if (this.stopPollCounter % 4 === 0) {
             this.checkIfStopsUpdated();
@@ -265,7 +304,6 @@ export class HomePage implements OnInit, OnDestroy {
       noWrap: true,
     }).addTo(this.map);
 
-    // If user clicks near an official stop (<= 150m), snap to that stop; otherwise drop custom pin
     this.map.on('click', (e: L.LeafletMouseEvent) => {
       const clickedLat = e.latlng.lat;
       const clickedLng = e.latlng.lng;
@@ -330,23 +368,27 @@ export class HomePage implements OnInit, OnDestroy {
   }
 
   detectPassengerGps(): void {
-    // GPS removed by request — falls back instantly to manual map tapping
     this.exactLocationStatus = 'Tap anywhere on the map below to drop your pin';
     this.updateExactLocationMarker(true);
   }
 
   updateExactLocationMarker(panMap: boolean = false): void {
     if (!this.map) return;
-    
-    // Clean pin icon centered exactly on the coordinates you tap
-    const html = `<div>📍</div>`;
-    
+
+    // Clean SVG pin icon anchored right above the clicked coordinate
+    const html = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#1b5e20" stroke="#ffffff" stroke-width="2">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+        <circle cx="12" cy="9" r="2.5" fill="#ffffff"/>
+      </svg>
+    `;
+
     const icon = L.divIcon({
       html,
       className: '',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
-      popupAnchor: [0, -14]
+      iconSize: [28, 28],
+      iconAnchor: [14, 28],
+      popupAnchor: [0, -28],
     });
 
     if (this.exactLocationMarker) {
@@ -361,10 +403,7 @@ export class HomePage implements OnInit, OnDestroy {
       this.map.setView([this.customLat, this.customLng], 14);
     }
   }
-  /**
-   * Returns either the passenger's Exact Location (when selectedStopId === 0)
-   * or the chosen Official Stop from the dropdown.
-   */
+
   getActiveOrigin(): { stop_id: number; stop_name: string; lat: number; lng: number; stop_order?: number } | null {
     if (Number(this.selectedStopId) === 0) {
       return {
@@ -382,14 +421,12 @@ export class HomePage implements OnInit, OnDestroy {
       const res = await fetch(`${this.serverUrl}/api/stops`);
       const rawStops: any[] = await res.json();
 
-      // Automatically sort locations geographically from Bongabon (NE) to Cabanatuan (SW)
       this.stops = rawStops.sort(
         (a, b) => (Number(b.lat) + Number(b.lng)) - (Number(a.lat) + Number(a.lng))
       );
 
       if (!this.map || this.stops.length === 0) return;
 
-      // Clear previous stop markers before redrawing
       this.stopMarkers.forEach((m) => this.map?.removeLayer(m));
       this.stopMarkers = [];
 
@@ -409,7 +446,6 @@ export class HomePage implements OnInit, OnDestroy {
           .addTo(this.map!)
           .bindPopup(`<b>${s.stop_name}</b><br>${s.municipality}`);
 
-        // Clicking a stop marker snaps directly to this stop instead of dropping a custom pin
         marker.on('click', (ev: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(ev);
           this.focusStop(s);
@@ -456,6 +492,7 @@ export class HomePage implements OnInit, OnDestroy {
     try {
       const res = await fetch(`${this.serverUrl}/api/buses`);
       const incomingBuses: any[] = await res.json();
+      const now = Date.now();
 
       incomingBuses.forEach((b) => {
         const curLat = Number(b.lat);
@@ -463,14 +500,32 @@ export class HomePage implements OnInit, OnDestroy {
         const prev = this.busVectors[b.bus_id];
 
         if (!prev) {
-          this.busVectors[b.bus_id] = { lat: curLat, lng: curLng, dLat: 0, dLng: 0 };
-        } else if (Math.abs(curLat - prev.lat) > 0.00001 || Math.abs(curLng - prev.lng) > 0.00001) {
           this.busVectors[b.bus_id] = {
             lat: curLat,
             lng: curLng,
-            dLat: curLat - prev.lat,
-            dLng: curLng - prev.lng,
+            dLat: 0,
+            dLng: 0,
+            timestamp: now,
+            speedKmh: 28.0,
           };
+        } else {
+          const distStepKm = this.haversineKm(prev.lat, prev.lng, curLat, curLng);
+          const elapsedHours = (now - prev.timestamp) / 3600000;
+
+          if (distStepKm > 0.002 && elapsedHours > 0) {
+            const rawSpeed = distStepKm / elapsedHours;
+            const clampedSpeed = Math.min(75.0, Math.max(8.0, rawSpeed));
+            const smoothedSpeed = prev.speedKmh * 0.6 + clampedSpeed * 0.4;
+
+            this.busVectors[b.bus_id] = {
+              lat: curLat,
+              lng: curLng,
+              dLat: curLat - prev.lat,
+              dLng: curLng - prev.lng,
+              timestamp: now,
+              speedKmh: smoothedSpeed,
+            };
+          }
         }
       });
 
@@ -503,7 +558,6 @@ export class HomePage implements OnInit, OnDestroy {
 
   focusStop(s: any): void {
     this.selectedStopId = s.stop_id;
-    // Remove the custom green waiting pin whenever an official stop is selected/snapped
     if (this.exactLocationMarker && this.map) {
       this.map.removeLayer(this.exactLocationMarker);
       this.exactLocationMarker = undefined;
@@ -524,7 +578,6 @@ export class HomePage implements OnInit, OnDestroy {
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
     const straightKm = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    // 1.1625 road curvature factor -> Bongabon Terminal to Cabanatuan Terminal = 30.20 km
     return straightKm * 1.1625;
   }
 
@@ -533,7 +586,6 @@ export class HomePage implements OnInit, OnDestroy {
     if (origin.stop_order !== undefined && dest.stop_order !== undefined && origin.stop_id !== 0) {
       return dest.stop_order >= origin.stop_order;
     }
-    // For exact GPS coordinates, Cabanatuan is South-West (lower latitude) of Bongabon
     return Number(dest.lat) <= Number(origin.lat);
   }
 
@@ -558,7 +610,6 @@ export class HomePage implements OnInit, OnDestroy {
   getPassengerRegularFare(): number {
     const dist = this.getPassengerTripDistance();
     if (dist === 0) return 0;
-    // ₱15.00 first 4km + ₱2.5763/km -> 30.2km = ₱82.50 Regular / ₱66.00 Discounted
     return 15.0 + Math.max(0, dist - 4.0) * 2.5763;
   }
 
@@ -595,8 +646,9 @@ export class HomePage implements OnInit, OnDestroy {
       return `Missed Bus (${dist.toFixed(1)} km away from your area)`;
     }
 
-    const mins = Math.max(1, Math.round((dist / 28.0) * 60));
-    return `Arriving in ~${mins} mins (${dist.toFixed(1)} km away)`;
+    const liveSpeedKmh = vec && vec.speedKmh >= 5 ? vec.speedKmh : 28.0;
+    const mins = Math.max(1, Math.round((dist / liveSpeedKmh) * 60));
+    return `Arriving in ~${mins} mins (${dist.toFixed(1)} km away • ${Math.round(liveSpeedKmh)} km/h)`;
   }
 
   private getBusSortPriority(b: any, origin: any, dest: any, passengerGoingSouth: boolean): number {

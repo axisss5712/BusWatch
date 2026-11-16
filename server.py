@@ -829,6 +829,18 @@ def get_live_leaflet_map():
         </div>
 
         <div class="add-stop-bar">
+            
+            <b>Search Location:</b>
+            <input
+                id="mapSearchInput"
+                class="input-box"
+                placeholder="Search stop or place..."
+                style="width: 190px;"
+                onkeydown="if(event.key==='Enter') searchDispatcherMap()"
+            />
+            <button class="mauve-btn" onclick="searchDispatcherMap()">Search</button>
+            <span>|</span>
+            
             <b>Add Stop:</b>
             <input id="stopName" class="input-box" placeholder="Location Name (e.g. Brgy. Cruz)" style="width: 190px;" />
             <select id="stopMuni" class="input-box">
@@ -857,6 +869,7 @@ def get_live_leaflet_map():
 
             const busMarkers = {};
             let stopMarkers = [];
+            let cachedStops = [];
             let routePolyline = null;
             let tempClickMarker = null;
 
@@ -931,7 +944,8 @@ def get_live_leaflet_map():
 
                 // Auto-sort by geographic location (Bongabon North-East -> Cabanatuan South-West)
                 const stops = rawStops.sort((a, b) => (Number(b.lat) + Number(b.lng)) - (Number(a.lat) + Number(a.lng)));
-
+                cachedStops = stops;
+                
                 stopMarkers.forEach(m => map.removeLayer(m));
                 stopMarkers = [];
 
@@ -971,7 +985,55 @@ def get_live_leaflet_map():
                 if (routePolyline) { map.removeLayer(routePolyline); }
                 routePolyline = L.polyline(routeCoords, { color: '#B47792', weight: 5, opacity: 0.9 }).addTo(map);
             }
+            
+            async function searchDispatcherMap() {
+                const query = document.getElementById('mapSearchInput').value.trim();
+                const badge = document.getElementById('statusBadge');
+                if (!query) return;
 
+                // 1. Check if the typed search matches an existing official route stop
+                const qLower = query.toLowerCase();
+                const matchedStop = cachedStops.find(
+                    s => s.stop_name.toLowerCase().includes(qLower) || s.municipality.toLowerCase().includes(qLower)
+                );
+                if (matchedStop) {
+                    map.setView([matchedStop.lat, matchedStop.lng], 15);
+                    badge.textContent = `Found: ${matchedStop.stop_name}`;
+                    return;
+                }
+
+                // 2. Otherwise search OpenStreetMap Nominatim for the place name
+                try {
+                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Nueva Ecija, Philippines')}&limit=1`;
+                    const res = await fetch(url);
+                    const results = await res.json();
+                    if (results && results.length > 0) {
+                        const lat = parseFloat(results[0].lat);
+                        const lng = parseFloat(results[0].lon);
+                        const shortName = results[0].display_name.split(',')[0];
+
+                        map.setView([lat, lng], 15);
+                        document.getElementById('stopName').value = shortName;
+                        document.getElementById('stopLat').value = lat.toFixed(7);
+                        document.getElementById('stopLng').value = lng.toFixed(7);
+
+                        if (tempClickMarker) {
+                            tempClickMarker.setLatLng([lat, lng]);
+                        } else {
+                            tempClickMarker = L.marker([lat, lng]).addTo(map);
+                        }
+                        tempClickMarker.bindPopup(
+                            `<b>Selected Location: ${shortName}</b><br>Lat: ${lat.toFixed(7)}, Lng: ${lng.toFixed(7)}`
+                        ).openPopup();
+                        badge.textContent = `Found: ${shortName}`;
+                    } else {
+                        badge.textContent = `Location "${query}" not found`;
+                    }
+                } catch (e) {
+                    badge.textContent = 'Search unavailable offline';
+                }
+            }
+                        
             async function syncBuses() {
                 const res = await fetch('/api/buses');
                 const buses = await res.json();

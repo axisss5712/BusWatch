@@ -4,10 +4,19 @@ ion-content {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+.coop-toolbar {
+  --background: #B47792;
+  --padding-top: 0;
+  --padding-bottom: 0;
+  --padding-start: 0;
+  --padding-end: 0;
+}
+
 .header-bar {
   background: #B47792;
   color: #FFFFFF;
   padding: 16px 18px;
+  padding-top: max(18px, calc(env(safe-area-inset-top, 0px) + 12px));
   border-bottom: 4px solid #FA9EBC;
 }
 
@@ -35,6 +44,19 @@ ion-content {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.icon-toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  border: 1.5px solid #FFDBD1;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .user-pill {
