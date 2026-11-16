@@ -3,17 +3,17 @@ import type { OnInit, OnDestroy } from '@angular/core';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Geolocation } from '@capacitor/geolocation';
-import { IonContent, IonHeader, IonTitle } from '@ionic/angular';
+import { IonContent, IonHeader, IonToolbar } from '@ionic/angular';
 
 @Component({
   selector: 'app-home',
   templateUrl: 'home.page.html',
   styleUrls: ['home.page.scss'],
   standalone: true,
-  imports: [IonTitle, IonHeader, CommonModule, FormsModule, IonContent],
+  imports: [IonToolbar, IonHeader, CommonModule, FormsModule, IonContent],
 })
 export class HomePage implements OnInit, OnDestroy {
-  serverUrl: string = 'http://192.168.1.9:8000';
+  serverUrl: string = 'http://192.168.1.8:8000';
   authMode: 'login' | 'signup' = 'login';
 
   conductor: any = null;
@@ -43,6 +43,7 @@ export class HomePage implements OnInit, OnDestroy {
 
   gpsStatus: string = 'GPS Standby';
   private gpsTimer?: any;
+  showServerConfig: boolean = false;
 
   ngOnInit(): void {
     const savedIp = localStorage.getItem('custom_server_url');

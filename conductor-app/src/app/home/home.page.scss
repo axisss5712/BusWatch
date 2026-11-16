@@ -28,6 +28,7 @@ ion-content {
 .app-subtitle {
   margin: 2px 0 0 0;
   font-size: 13px;
+  opacity: 0.95;
 }
 
 .server-box {
@@ -36,6 +37,21 @@ ion-content {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #FFDBD1;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conductor-name {
+  background: #FFDBD1;
+  color: #2D262B;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
 }
 
 .server-label {

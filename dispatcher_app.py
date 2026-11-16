@@ -52,12 +52,17 @@ def main(page: ft.Page):
 
     server_ip = ft.TextField(
         label="Server Address (Change IP here if network changes)",
-        value="http://192.168.1.9:8000",
+        value="http://192.168.1.8:8000",
         expand=True,
+        visible=False,  # Hidden by default
         text_size=15,
         border=input_border(ACCENT_MAUVE),
         color=TEXT_DARK,
     )
+
+    def toggle_server_ip(e=None):
+        server_ip.visible = not server_ip.visible
+        page.update()
 
     status_banner = ft.Container(
         padding=12,
@@ -1090,6 +1095,12 @@ def main(page: ft.Page):
                             ft.Row(
                                 spacing=8,
                                 controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.SETTINGS,
+                                        tooltip="Server Address Settings",
+                                        icon_color=ACCENT_MAUVE,
+                                        on_click=toggle_server_ip,
+                                    ),
                                     ft.Button(
                                         "Refresh Data",
                                         icon=ft.Icons.REFRESH,

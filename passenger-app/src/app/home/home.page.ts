@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import type { OnDestroy, OnInit } from '@angular/core';
 import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { IonContent, IonHeader, IonTitle } from '@ionic/angular';
+import { IonContent, IonHeader, IonTitle, IonToolbar} from '@ionic/angular';
 import * as L from 'leaflet';
 
 type GeolocationPosition = {
@@ -68,12 +68,12 @@ const Geolocation = {
   templateUrl: 'home.page.html',
   styleUrls: ['home.page.scss'],
   standalone: true,
-  imports: [IonTitle, IonHeader, CommonModule, FormsModule, IonContent],
+  imports: [IonToolbar, IonTitle, IonHeader, CommonModule, FormsModule, IonContent],
 })
 export class HomePage implements OnInit, OnDestroy {
   protected readonly Math = Math;
 
-  serverUrl: string = 'http://192.168.1.9:8000';
+  serverUrl: string = 'http://192.168.1.8:8000';
   authMode: 'login' | 'signup' = 'login';
 
   loggedInUser: any = null;
@@ -110,6 +110,7 @@ export class HomePage implements OnInit, OnDestroy {
   private pollTimer?: any;
   private stopPollCounter: number = 0;
   private watchId: string | null = null;
+  showServerConfig: boolean = false;
 
   ngOnInit(): void {
     const savedIp = localStorage.getItem('custom_server_url');

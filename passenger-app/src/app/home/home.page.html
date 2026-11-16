@@ -1,43 +1,51 @@
-<ion-header>
-    <ion-title></ion-title>
-</ion-header>
-
-<ion-content>
-  <!-- Top Cooperative Header Bar -->
-  <div class="header-bar">
-    <div class="header-top">
-      <div>
-        <h1 class="app-title">BusWatch</h1>
-        <p class="app-subtitle">Bongabon • Palayan City • Cabanatuan Terminal</p>
-      </div>
-      @if (loggedInUser) {
+<ion-header class="ion-no-border">
+  <ion-toolbar class="buswatch-toolbar">
+    <div class="header-bar">
+      <div class="header-top">
+        <div>
+          <h1 class="app-title">BusWatch</h1>
+          <p class="app-subtitle">Bongabon • Palayan City • Cabanatuan Terminal</p>
+        </div>
         <div class="user-strip">
-          <span class="user-pill">👤 {{ loggedInUser.full_name }}</span>
-          <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+          <button
+            type="button"
+            class="icon-toggle-btn"
+            title="Server Settings"
+            (click)="showServerConfig = !showServerConfig"
+          >
+            ⚙️
+          </button>
+          @if (loggedInUser) {
+            <span class="user-pill"> {{ loggedInUser.full_name }}</span>
+            <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+          }
+        </div>
+      </div>
+
+      @if (showServerConfig) {
+        <div class="server-box">
+          <label class="server-label" for="passenger-server-url">
+            Server IP Address:
+          </label>
+          <div class="server-bar">
+            <input
+              id="passenger-server-url"
+              class="input-box server-input"
+              [(ngModel)]="serverUrl"
+              (change)="updateServerUrl(serverUrl)"
+              placeholder="http://192.168.1.8:8000"
+            />
+            <button type="button" class="pink-btn connect-btn" (click)="saveAndConnect()">
+              Save & Connect
+            </button>
+          </div>
         </div>
       }
     </div>
+  </ion-toolbar>
+</ion-header>
 
-    <!-- Clearly Labeled Server IP Bar -->
-    <div class="server-box">
-      <label class="server-label" for="passenger-server-url">
-        Server IP Address:
-      </label>
-      <div class="server-bar">
-        <input
-          id="passenger-server-url"
-          class="input-box server-input"
-          [(ngModel)]="serverUrl"
-          (change)="updateServerUrl(serverUrl)"
-          placeholder="http://192.168.1.9:8000"
-        />
-        <button type="button" class="pink-btn connect-btn" (click)="saveAndConnect()">
-          Save & Connect
-        </button>
-      </div>
-    </div>
-  </div>
-
+<ion-content>
   <div class="page-container">
     <!-- 1. SEPARATED COMMUTER LOG-IN vs. CREATE ACCOUNT CARD -->
     @if (!loggedInUser) {

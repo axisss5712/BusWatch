@@ -1,39 +1,51 @@
-<ion-header>
-    <ion-title></ion-title>
-</ion-header>
-<ion-content>
-  <!-- Top Cooperative Header Bar -->
-  <div class="header-bar">
-    <div class="header-top">
-      <div>
-        <h1 class="app-title">Conductor Ticketing & GPS</h1>
-        <p class="app-subtitle">Bongabon Primemovers Transport Service Cooperative</p>
+<ion-header class="ion-no-border">
+  <ion-toolbar class="buswatch-toolbar">
+    <div class="header-bar">
+      <div class="header-top">
+        <div>
+          <h1 class="app-title">Conductor Ticketing</h1>
+          <p class="app-subtitle">Bongabon • Palayan City • Cabanatuan Terminal</p>
+        </div>
+        <div class="header-actions">
+          <button
+            type="button"
+            class="icon-toggle-btn"
+            title="Server Settings"
+            (click)="showServerConfig = !showServerConfig"
+          >
+            ⚙️
+          </button>
+          @if (conductor) {
+            <span class="conductor-name">{{ conductor.full_name }}</span>
+            <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+          }
+        </div>
       </div>
-      @if (conductor) {
-        <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+
+      @if (showServerConfig) {
+        <div class="server-box">
+          <label class="server-label" for="conductor-server-url">
+            Server IP Address:
+          </label>
+          <div class="server-bar">
+            <input
+              id="conductor-server-url"
+              class="input-box server-input"
+              [(ngModel)]="serverUrl"
+              (change)="updateServerUrl(serverUrl)"
+              placeholder="http://192.168.1.9:8000"
+            />
+            <button type="button" class="pink-btn connect-btn" (click)="saveAndSync()">
+              Save & Sync
+            </button>
+          </div>
+        </div>
       }
     </div>
-
-    <!-- Editable Server IP Box (Changeable Anytime on LAN) -->
-    <div class="server-box">
-      <label class="server-label" for="conductor-server-url">
-        ⚙️ Server IP Address (Change anytime to match Wi-Fi / Hotspot):
-      </label>
-      <div class="server-bar">
-        <input
-          id="conductor-server-url"
-          class="input-box server-input"
-          [(ngModel)]="serverUrl"
-          (change)="updateServerUrl(serverUrl)"
-          placeholder="http://192.168.1.9:8000"
-        />
-        <button type="button" class="pink-btn connect-btn" (click)="saveAndSync()">
-          Save & Sync
-        </button>
-      </div>
-    </div>
-  </div>
-
+  </ion-toolbar>
+</ion-header>
+<ion-content>
+ 
   <div class="page-container">
     <!-- 1. SEPARATED CONDUCTOR LOG-IN vs. REGISTER NEW CONDUCTOR -->
     @if (!conductor) {
@@ -152,7 +164,7 @@
               {{ selectedBusId }} ({{ activeBus?.status || 'Seats Available' }})
             </h2>
           </div>
-          <span class="gps-pill">📡 {{ gpsStatus }}</span>
+          <span class="gps-pill">{{ gpsStatus }}</span>
         </div>
 
         <!-- Big 3-Box Load Counter -->
