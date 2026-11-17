@@ -54,7 +54,7 @@ def main(page: ft.Page):
         label="Server Address (Change IP here if network changes)",
         value="http://192.168.1.8:8000",
         expand=True,
-        visible=False,  # Hidden by default
+        visible=False,
         text_size=15,
         border=input_border(ACCENT_MAUVE),
         color=TEXT_DARK,
@@ -85,6 +85,80 @@ def main(page: ft.Page):
 
     def base_url() -> str:
         return server_ip.value.strip().rstrip("/")
+
+    # =========================================================================
+    # BUILT-IN CONFIRMATION CARD (WORKS ACROSS ALL FLET VERSIONS)
+    # =========================================================================
+    pending_confirm = {"callback": None, "from_auth": False}
+    confirm_title = ft.Text("", size=20, weight=ft.FontWeight.BOLD, color=ACCENT_MAUVE)
+    confirm_message = ft.Text("", size=15, color=TEXT_DARK)
+
+    def close_confirm_card(e=None):
+        confirm_card.visible = False
+        if pending_confirm["from_auth"]:
+            auth_card.visible = True
+        else:
+            main_workspace.visible = True
+        page.update()
+
+    def proceed_confirm_card(e=None):
+        cb = pending_confirm["callback"]
+        confirm_card.visible = False
+        if pending_confirm["from_auth"]:
+            auth_card.visible = True
+        else:
+            main_workspace.visible = True
+        page.update()
+        if cb:
+            cb()
+
+    confirm_card = ft.Container(
+        visible=False,
+        padding=28,
+        bgcolor=CARD_WHITE,
+        border_radius=16,
+        border=ft.Border.all(2.5, ACCENT_MAUVE),
+        content=ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=16,
+            controls=[
+                confirm_title,
+                confirm_message,
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=14,
+                    controls=[
+                        ft.Button(
+                            "Cancel",
+                            icon=ft.Icons.CLOSE,
+                            height=46,
+                            bgcolor=SOFT_PEACH,
+                            color=TEXT_DARK,
+                            on_click=close_confirm_card,
+                        ),
+                        ft.Button(
+                            "Yes, Proceed",
+                            icon=ft.Icons.CHECK_CIRCLE,
+                            height=46,
+                            bgcolor=ACCENT_MAUVE,
+                            color=CARD_WHITE,
+                            on_click=proceed_confirm_card,
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+
+    def show_confirm_dialog(title_text: str, message_text: str, on_confirm_callback):
+        pending_confirm["callback"] = on_confirm_callback
+        pending_confirm["from_auth"] = auth_card.visible
+        confirm_title.value = title_text
+        confirm_message.value = message_text
+        auth_card.visible = False
+        main_workspace.visible = False
+        confirm_card.visible = True
+        page.update()
 
     # =========================================================================
     # SEPARATED AUTHENTICATION VIEW (LOG IN vs. CREATE ACCOUNT)
@@ -194,47 +268,62 @@ def main(page: ft.Page):
         if not uname or not pword:
             set_status("Please enter a Username and Password to create your account.", "#b71c1c", "#ffcdd2")
             return
-        try:
-            res = requests.post(
-                f"{base_url()}/api/auth/signup",
-                json={
-                    "username": uname,
-                    "password": pword,
-                    "full_name": fname,
-                    "role": "Dispatcher",
-                    "contact_number": contact,
-                },
-                timeout=4,
-            )
-            if res.status_code == 200:
-                data = res.json()
-                current_user.update(data)
-                auth_card.visible = False
-                main_workspace.visible = True
-                btn_logout.visible = True
-                set_status(
-                    f"Account Created! Welcome, Dispatcher {data['full_name']} (@{data['username']})",
-                    "#1b5e20",
-                    "#c8e6c9",
+
+        def execute_signup():
+            try:
+                res = requests.post(
+                    f"{base_url()}/api/auth/signup",
+                    json={
+                        "username": uname,
+                        "password": pword,
+                        "full_name": fname,
+                        "role": "Dispatcher",
+                        "contact_number": contact,
+                    },
+                    timeout=4,
                 )
-                sync_all()
-            else:
-                err_msg = (
-                    res.json().get("detail", "Sign-Up failed")
-                    if "application/json" in res.headers.get("content-type", "")
-                    else res.text
-                )
-                set_status(f"Sign-Up Error: {err_msg}", "#b71c1c", "#ffcdd2")
-        except Exception as ex:
-            set_status(f"Cannot connect to server ({base_url()}). Check Server IP above. ({ex})", "#b71c1c", "#ffcdd2")
+                if res.status_code == 200:
+                    data = res.json()
+                    current_user.update(data)
+                    auth_card.visible = False
+                    main_workspace.visible = True
+                    btn_logout.visible = True
+                    set_status(
+                        f"Account Created! Welcome, Dispatcher {data['full_name']} (@{data['username']})",
+                        "#1b5e20",
+                        "#c8e6c9",
+                    )
+                    sync_all()
+                else:
+                    err_msg = (
+                        res.json().get("detail", "Sign-Up failed")
+                        if "application/json" in res.headers.get("content-type", "")
+                        else res.text
+                    )
+                    set_status(f"Sign-Up Error: {err_msg}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Cannot connect to server ({base_url()}). Check Server IP above. ({ex})", "#b71c1c", "#ffcdd2")
+
+        show_confirm_dialog(
+            "Confirm Account Creation",
+            f"Are you sure you want to register Dispatcher account '{uname}'?",
+            execute_signup,
+        )
 
     def handle_logout(e=None):
-        current_user.update({"user_id": None, "full_name": "Guest", "username": ""})
-        auth_password.value = ""
-        main_workspace.visible = False
-        btn_logout.visible = False
-        auth_card.visible = True
-        set_status("You have logged out safely.", TEXT_DARK, SOFT_PEACH)
+        def execute_logout():
+            current_user.update({"user_id": None, "full_name": "Guest", "username": ""})
+            auth_password.value = ""
+            main_workspace.visible = False
+            btn_logout.visible = False
+            auth_card.visible = True
+            set_status("You have logged out safely.", TEXT_DARK, SOFT_PEACH)
+
+        show_confirm_dialog(
+            "Confirm Log Out",
+            "Are you sure you want to log out of the Dispatcher Console?",
+            execute_logout,
+        )
 
     btn_mode_login = ft.Button(
         "1. Existing User (Log In)",
@@ -319,7 +408,6 @@ def main(page: ft.Page):
         width=260,
     )
 
-    # Read-Only Ticket-Driven Occupancy Banner (No Ghost Passengers Allowed)
     live_occupancy_banner = ft.Container(
         padding=12,
         bgcolor=SOFT_PEACH,
@@ -328,7 +416,6 @@ def main(page: ft.Page):
         content=ft.Text("", size=14, weight=ft.FontWeight.BOLD, color=TEXT_DARK),
     )
 
-    # Temporary Shift Crew Fields (Can be changed per shift/trip)
     shift_driver_input = ft.TextField(
         label="Driver on Duty",
         value="",
@@ -344,12 +431,11 @@ def main(page: ft.Page):
         border=input_border(),
     )
 
-    # Terminal Send-Off Selector
     terminal_dropdown = ft.Dropdown(
         label="Step 3: Select Departure Terminal for Send-Off",
         expand=True,
     )
-    
+
     remove_stop_dropdown = ft.Dropdown(
         label="Select Location to Remove from Route",
         expand=True,
@@ -395,6 +481,7 @@ def main(page: ft.Page):
             ft.DataColumn(ft.Text("Active Conductor", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Ticketed Load", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Status", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Action", weight=ft.FontWeight.BOLD)),
         ],
         rows=[],
     )
@@ -462,7 +549,9 @@ def main(page: ft.Page):
             buses_here = [
                 f"{b['bus_id']} ({b['current_passengers']} pax)"
                 for b in buses_cache.values()
-                if abs(float(b["lat"]) - float(s["lat"])) < 0.008 and abs(float(b["lng"]) - float(s["lng"])) < 0.008
+                if b.get("status") != "Inactive"
+                and abs(float(b["lat"]) - float(s["lat"])) < 0.008
+                and abs(float(b["lng"]) - float(s["lng"])) < 0.008
             ]
             badge_text = f"At Stop: {', '.join(buses_here)}" if buses_here else "No bus currently at stop"
             route_corridor_row.controls.append(
@@ -516,7 +605,6 @@ def main(page: ft.Page):
             terminal_dropdown.options.clear()
             remove_stop_dropdown.options.clear()
 
-            # Automatically sort by geographic location (Bongabon -> Cabanatuan)
             all_stops = sorted(
                 res.json(),
                 key=lambda s: float(s["lat"]) + float(s["lng"]),
@@ -524,7 +612,6 @@ def main(page: ft.Page):
             )
             for s in all_stops:
                 stops_list.append(s)
-                # Clean location name + municipality (no "Stop 1:" prefix)
                 label = f"{s['stop_name']} ({s['municipality']})"
                 stops_cache[label] = s
                 terminal_dropdown.options.append(ft.DropdownOption(label))
@@ -547,23 +634,86 @@ def main(page: ft.Page):
         if len(stops_list) <= 2:
             set_status("Cannot remove stop: Route must have at least 2 locations.", "#b71c1c", "#ffcdd2")
             return
-        res = requests.delete(f"{base_url()}/api/stops/{target_stop['stop_id']}", timeout=3)
-        if res.status_code == 200:
-            set_status(f"🗑️ Removed '{target_stop['stop_name']}' and re-sorted route!", "#1b5e20", "#c8e6c9")
-            remove_stop_dropdown.value = None
-            sync_all()
-        else:
-            set_status(f"Failed to remove stop: {res.text}", "#b71c1c", "#ffcdd2")
+
+        def execute_remove_stop():
+            res = requests.delete(f"{base_url()}/api/stops/{target_stop['stop_id']}", timeout=3)
+            if res.status_code == 200:
+                set_status(f"Removed '{target_stop['stop_name']}' and re-sorted route!", "#1b5e20", "#c8e6c9")
+                remove_stop_dropdown.value = None
+                sync_all()
+            else:
+                set_status(f"Failed to remove stop: {res.text}", "#b71c1c", "#ffcdd2")
+
+        show_confirm_dialog(
+            "Confirm Stop Removal",
+            f"Are you sure you want to remove '{target_stop['stop_name']}' from the route?",
+            execute_remove_stop,
+        )
+
+    def toggle_bus_status(bus_id: str, current_status: str):
+        if not bus_id:
+            set_status("Please select a bus unit first.", "#b71c1c", "#ffcdd2")
+            return
+
+        is_currently_inactive = current_status == "Inactive"
+        new_status = "Active" if is_currently_inactive else "Inactive"
+        prompt_msg = (
+            f"Are you sure you want to mark {bus_id} as ACTIVE and return it to the live map and route?"
+            if is_currently_inactive
+            else f"Are you sure you want to mark {bus_id} as INACTIVE (no driver / under repair)? "
+                 f"This will remove {bus_id} from the live map, corridor, and mobile apps."
+        )
+
+        def execute_status_change():
+            try:
+                res = requests.post(
+                    f"{base_url()}/api/buses/status",
+                    json={"bus_id": bus_id, "status": new_status},
+                    timeout=3,
+                )
+                if res.status_code == 200:
+                    set_status(
+                        f"Bus {bus_id} status changed to {new_status}.",
+                        "#1b5e20" if new_status == "Active" else "#b71c1c",
+                        "#c8e6c9" if new_status == "Active" else "#ffcdd2",
+                    )
+                    sync_all()
+                else:
+                    set_status(f"Failed to update status: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Error updating bus status: {ex}", "#b71c1c", "#ffcdd2")
+
+        show_confirm_dialog(
+            f"Change {bus_id} Status to {new_status}",
+            prompt_msg,
+            execute_status_change,
+        )
 
     def fetch_buses():
-        res = requests.get(f"{base_url()}/api/buses", timeout=3)
+        res = requests.get(
+            f"{base_url()}/api/buses",
+            params={"include_inactive": "true"},
+            timeout=3,
+        )
         if res.status_code == 200:
             buses_cache.clear()
             bus_selector.options.clear()
             fleet_table.rows.clear()
             for b in res.json():
                 buses_cache[b["bus_id"]] = b
-                bus_selector.options.append(ft.DropdownOption(b["bus_id"]))
+                is_inactive = b["status"] == "Inactive"
+
+                if not is_inactive:
+                    bus_selector.options.append(ft.DropdownOption(b["bus_id"]))
+
+                status_btn = ft.Button(
+                    "Set Active" if is_inactive else "Set Inactive",
+                    height=36,
+                    bgcolor="#c8e6c9" if is_inactive else "#ffcdd2",
+                    color="#1b5e20" if is_inactive else "#b71c1c",
+                    on_click=lambda e, bid=b["bus_id"], st=b["status"]: toggle_bus_status(bid, st),
+                )
+
                 fleet_table.rows.append(
                     ft.DataRow(
                         cells=[
@@ -578,10 +728,23 @@ def main(page: ft.Page):
                                     size=13,
                                 )
                             ),
-                            ft.DataCell(ft.Text(b["status"], weight=ft.FontWeight.BOLD, size=13)),
+                            ft.DataCell(
+                                ft.Text(
+                                    b["status"],
+                                    weight=ft.FontWeight.BOLD,
+                                    size=13,
+                                    color="#b71c1c" if is_inactive else TEXT_DARK,
+                                )
+                            ),
+                            ft.DataCell(status_btn),
                         ]
                     )
                 )
+            if bus_selector.options and (
+                not bus_selector.value
+                or bus_selector.value not in [opt.key for opt in bus_selector.options]
+            ):
+                bus_selector.value = bus_selector.options[0].key
             render_visual_route_corridor()
             populate_selected_bus()
 
@@ -647,9 +810,16 @@ def main(page: ft.Page):
                 )
 
     def resolve_fb(fb_id: int):
-        requests.put(f"{base_url()}/api/feedback/{fb_id}/resolve", timeout=3)
-        fetch_feedback()
-        page.update()
+        def execute_resolve():
+            requests.put(f"{base_url()}/api/feedback/{fb_id}/resolve", timeout=3)
+            fetch_feedback()
+            page.update()
+
+        show_confirm_dialog(
+            "Confirm Feedback Resolution",
+            f"Are you sure you want to mark Feedback #{fb_id} as Resolved?",
+            execute_resolve,
+        )
 
     def fetch_feedback():
         res = requests.get(f"{base_url()}/api/feedback", timeout=3)
@@ -681,11 +851,7 @@ def main(page: ft.Page):
                     )
                 )
 
-    def update_shift_crew(e=None):
-        """Updates only the active shift Driver and Conductor for the selected bus."""
-        b = buses_cache.get(bus_selector.value)
-        if not b:
-            return
+    def save_shift_crew_request(b: dict):
         new_driver = (shift_driver_input.value or "").strip() or "Unassigned"
         new_conductor = (shift_conductor_input.value or "").strip() or "Unassigned"
         payload = {
@@ -698,31 +864,36 @@ def main(page: ft.Page):
             "max_seated": int(b["max_seated"]),
             "max_standing": int(b["max_standing"]),
         }
-        res = requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3)
-        if res.status_code == 200:
-            set_status(
-                f"Crew Updated for {b['bus_id']}: Driver {new_driver} & Conductor {new_conductor}",
-                "#1b5e20",
-                "#c8e6c9",
-            )
-            fetch_buses()
-            fetch_remittance_and_tickets()
+        return requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3), new_driver, new_conductor
 
-    def dispatch_send_off_bus(e=None):
-        """
-        Properly dispatches (sends off) a mini-bus from the selected terminal:
-        1. Saves the active Shift Driver and Conductor for this trip.
-        2. Clears any completed/leftover onboard tickets from the previous trip.
-        3. Positions the bus at the departure terminal with 0 ghost passengers.
-        """
+    def update_shift_crew(e=None):
+        """Updates only the active shift Driver and Conductor for the selected bus."""
         b = buses_cache.get(bus_selector.value)
         if not b:
             return
 
-        # 1. Update Shift Crew first
-        update_shift_crew()
+        def execute_crew_update():
+            res, new_driver, new_conductor = save_shift_crew_request(b)
+            if res.status_code == 200:
+                set_status(
+                    f"Crew Updated for {b['bus_id']}: Driver {new_driver} & Conductor {new_conductor}",
+                    "#1b5e20",
+                    "#c8e6c9",
+                )
+                fetch_buses()
+                fetch_remittance_and_tickets()
 
-        # 2. Identify Departure Terminal
+        show_confirm_dialog(
+            "Confirm Crew Assignment",
+            f"Save on-duty crew for {b['bus_id']}?",
+            execute_crew_update,
+        )
+
+    def dispatch_send_off_bus(e=None):
+        b = buses_cache.get(bus_selector.value)
+        if not b:
+            return
+
         lbl = terminal_dropdown.value
         target_stop = stops_cache.get(lbl)
         if not target_stop and stops_list:
@@ -730,56 +901,80 @@ def main(page: ft.Page):
         if not target_stop:
             return
 
-        # 3. Clear any leftover onboard tickets from the finished trip so headcount is clean
-        for s in stops_list:
-            try:
-                requests.post(
-                    f"{base_url()}/api/tickets/dropoff",
-                    json={"bus_id": b["bus_id"], "destination_stop_id": s["stop_id"]},
-                    timeout=2,
-                )
-            except Exception:
-                pass
+        def execute_send_off():
+            save_shift_crew_request(b)
 
-        # 4. Dispatch bus from the terminal with 0 ghost passengers
-        payload = {
-            "bus_id": b["bus_id"],
-            "route_name": OFFICIAL_ROUTE,
-            "lat": float(target_stop["lat"]),
-            "lng": float(target_stop["lng"]),
-            "current_passengers": 0,
-            "max_seated": int(b["max_seated"]),
-            "max_standing": int(b["max_standing"]),
-            "event_source": "Terminal Dispatch",
-        }
-        res = requests.post(f"{base_url()}/api/buses/update", json=payload, timeout=3)
-        if res.status_code == 200:
-            set_status(
-                f" Dispatched {b['bus_id']} from {target_stop['stop_name']} "
-                f"(Driver: {shift_driver_input.value}, Conductor: {shift_conductor_input.value}) — Ready for Conductor Ticketing!",
-                "#1b5e20",
-                "#c8e6c9",
-            )
-            fetch_buses()
-            fetch_logs()
-            fetch_remittance_and_tickets()
-        page.update()
+            for s in stops_list:
+                try:
+                    requests.post(
+                        f"{base_url()}/api/tickets/dropoff",
+                        json={"bus_id": b["bus_id"], "destination_stop_id": s["stop_id"]},
+                        timeout=2,
+                    )
+                except Exception:
+                    pass
+
+            payload = {
+                "bus_id": b["bus_id"],
+                "route_name": OFFICIAL_ROUTE,
+                "lat": float(target_stop["lat"]),
+                "lng": float(target_stop["lng"]),
+                "current_passengers": 0,
+                "max_seated": int(b["max_seated"]),
+                "max_standing": int(b["max_standing"]),
+                "event_source": "Terminal Dispatch",
+            }
+            res = requests.post(f"{base_url()}/api/buses/update", json=payload, timeout=3)
+            if res.status_code == 200:
+                set_status(
+                    f"Dispatched {b['bus_id']} from {target_stop['stop_name']} "
+                    f"(Driver: {shift_driver_input.value}, Conductor: {shift_conductor_input.value}) — Ready for Conductor Ticketing!",
+                    "#1b5e20",
+                    "#c8e6c9",
+                )
+                fetch_buses()
+                fetch_logs()
+                fetch_remittance_and_tickets()
+            page.update()
+
+        show_confirm_dialog(
+            "Confirm Terminal Send-Off",
+            f"Are you sure you want to send off {b['bus_id']} from {target_stop['stop_name']} and start a new trip?",
+            execute_send_off,
+        )
 
     def register_bus_click(e):
-        payload = {
-            "bus_id": reg_bus_id.value,
-            "plate_number": reg_plate.value,
-            "operator_name": reg_operator.value,
-            "driver_name": reg_driver.value or "Unassigned",
-            "conductor_name": reg_conductor.value or "Unassigned",
-            "route_name": OFFICIAL_ROUTE,
-            "max_seated": int(reg_seated.value or 30),
-            "max_standing": int(reg_standing.value or 15),
-        }
-        res = requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3)
-        if res.status_code == 200:
-            set_status(f"Registered Mini-Bus {payload['bus_id']} ({payload['plate_number']}) to fleet!", "#1b5e20", "#c8e6c9")
-            fetch_buses()
+        bus_id_val = (reg_bus_id.value or "").strip()
+        plate_val = (reg_plate.value or "").strip()
+        if not bus_id_val or not plate_val:
+            set_status("Bus Unit Number and Plate Number are required.", "#b71c1c", "#ffcdd2")
+            return
+
+        def execute_register_bus():
+            payload = {
+                "bus_id": bus_id_val,
+                "plate_number": plate_val,
+                "operator_name": reg_operator.value,
+                "driver_name": reg_driver.value or "Unassigned",
+                "conductor_name": reg_conductor.value or "Unassigned",
+                "route_name": OFFICIAL_ROUTE,
+                "max_seated": int(reg_seated.value or 30),
+                "max_standing": int(reg_standing.value or 15),
+            }
+            res = requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3)
+            if res.status_code == 200:
+                set_status(
+                    f"Registered Mini-Bus {payload['bus_id']} ({payload['plate_number']}) to fleet!",
+                    "#1b5e20",
+                    "#c8e6c9",
+                )
+                fetch_buses()
+
+        show_confirm_dialog(
+            "Confirm Save Mini-Bus Profile",
+            f"Are you sure you want to save Mini-Bus {bus_id_val} ({plate_val}) to the fleet?",
+            execute_register_bus,
+        )
 
     def sync_all(e=None):
         try:
@@ -850,13 +1045,22 @@ def main(page: ft.Page):
                         ft.Row(
                             [
                                 bus_selector,
+                                ft.Button(
+                                    "Set Selected Bus Inactive (Repair / No Crew)",
+                                    icon=ft.Icons.BUILD_CIRCLE,
+                                    height=46,
+                                    bgcolor="#ffcdd2",
+                                    color="#b71c1c",
+                                    on_click=lambda _: toggle_bus_status(bus_selector.value, "Active"),
+                                ),
                                 ft.Text(
-                                    "Note: Passenger headcount is strictly controlled by Conductor E-Tickets (no manual ghost passengers).",
-                                    size=13,
+                                    "To reactivate a bus, open Tab 2 (Permanent Fleet Vehicles) and click 'Set Active'.",
+                                    size=12,
                                     italic=True,
                                     color=TEXT_DARK,
                                 ),
-                            ]
+                            ],
+                            wrap=True,
                         ),
                         live_occupancy_banner,
                         ft.Text(
@@ -896,7 +1100,7 @@ def main(page: ft.Page):
                                     on_click=dispatch_send_off_bus,
                                     bgcolor=ACCENT_MAUVE,
                                     color=CARD_WHITE,
-                                ), 
+                                ),
                             ]
                         ),
                         ft.Divider(color=PASTEL_PINK),
@@ -910,7 +1114,7 @@ def main(page: ft.Page):
                             [
                                 remove_stop_dropdown,
                                 ft.Button(
-                                    "🗑️ Remove Stop from Route",
+                                    "Remove Stop from Route",
                                     icon=ft.Icons.DELETE_FOREVER,
                                     height=48,
                                     on_click=remove_selected_stop,
@@ -1119,6 +1323,7 @@ def main(page: ft.Page):
             ),
         ),
         status_banner,
+        confirm_card,
         auth_card,
         main_workspace,
     )

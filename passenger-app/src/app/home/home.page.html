@@ -85,16 +85,26 @@
           />
 
           <label class="field-label" for="login-password">Your Password:</label>
-          <input
-            id="login-password"
-            class="input-box"
-            type="password"
-            [(ngModel)]="authPassword"
-            placeholder="Enter your password"
-          />
+          <div style="position: relative;">
+            <input
+              id="login-password"
+              class="input-box"
+              [type]="showLoginPassword ? 'text' : 'password'"
+              [(ngModel)]="authPassword"
+              placeholder="Enter your password"
+              style="padding-right: 60px;"
+            />
+            <button
+              type="button"
+              (click)="showLoginPassword = !showLoginPassword"
+              style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #B47792; font-weight: 700; cursor: pointer; font-size: 13px;"
+            >
+              {{ showLoginPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
 
           <button type="button" class="mauve-btn big-action-btn" (click)="login()">
-            Log In to View Buses
+            Log In
           </button>
         }
 
@@ -119,15 +129,25 @@
           />
 
           <label class="field-label" for="signup-password">Choose a Password:</label>
-          <input
-            id="signup-password"
-            class="input-box"
-            type="password"
-            [(ngModel)]="authPassword"
-            placeholder="Create a password"
-          />
+          <div style="position: relative;">
+            <input
+              id="signup-password"
+              class="input-box"
+              [type]="showSignupPassword ? 'text' : 'password'"
+              [(ngModel)]="authPassword"
+              placeholder="Create a password"
+              style="padding-right: 60px;"
+            />
+            <button
+              type="button"
+              (click)="showSignupPassword = !showSignupPassword"
+              style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #B47792; font-weight: 700; cursor: pointer; font-size: 13px;"
+            >
+              {{ showSignupPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
 
-          <button type="button" class="mauve-btn big-action-btn" (click)="signup()">
+          <button type="button" class="mauve-btn big-action-btn" (click)="confirmAndSignup()">
             Create Account & Continue
           </button>
         }
@@ -340,7 +360,7 @@
           placeholder="Type what happened or describe your lost item here..."
         ></textarea>
 
-        <button type="button" class="mauve-btn big-action-btn" (click)="submitFeedback()">
+        <button type="button" class="mauve-btn big-action-btn" (click)="confirmAndSubmitFeedback()">
           Send Report to Cooperative Dispatcher
         </button>
 

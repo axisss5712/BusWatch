@@ -178,6 +178,27 @@ export class HomePage implements OnInit, OnDestroy {
     }
   }
 
+  showLoginPassword: boolean = false;
+  showSignupPassword: boolean = false;
+
+  confirmAndSignup(): void {
+    if (confirm('Are you sure you want to create this account?')) {
+      this.signup();
+    }
+  }
+
+  confirmAndLogout(): void {
+    if (confirm('Are you sure you want to log out?')) {
+      this.logout();
+    }
+  }
+
+  confirmAndSubmitFeedback(): void {
+    if (confirm('Are you sure you want to send this report to the dispatcher?')) {
+      this.submitFeedback();
+    }
+  }
+
   setAuthMode(mode: 'login' | 'signup'): void {
     this.authMode = mode;
     this.authMessage = '';
@@ -532,6 +553,14 @@ export class HomePage implements OnInit, OnDestroy {
       this.buses = incomingBuses;
       if (!this.map) return;
 
+      const activeIds = new Set(this.buses.map((b) => b.bus_id));
+      Object.keys(this.busMarkers).forEach((id) => {
+        if (!activeIds.has(id)) {
+          this.map?.removeLayer(this.busMarkers[id]);
+          delete this.busMarkers[id];
+        }
+      });
+
       this.buses.forEach((b) => {
         const html = `<div style="background:#B47792;color:#fff;padding:4px 8px;border-radius:10px;font-weight:700;font-size:12px;border:2px solid #FA9EBC;white-space:nowrap;">${b.bus_id} (${b.available_seats} free)</div>`;
         const icon = L.divIcon({
@@ -648,7 +677,7 @@ export class HomePage implements OnInit, OnDestroy {
 
     const liveSpeedKmh = vec && vec.speedKmh >= 5 ? vec.speedKmh : 28.0;
     const mins = Math.max(1, Math.round((dist / liveSpeedKmh) * 60));
-    return `Arriving in ~${mins} mins (${dist.toFixed(1)} km away • ${Math.round(liveSpeedKmh)} km/h)`;
+    return `Arriving in ~${mins} mins (${dist.toFixed(1)} km away)`;
   }
 
   private getBusSortPriority(b: any, origin: any, dest: any, passengerGoingSouth: boolean): number {

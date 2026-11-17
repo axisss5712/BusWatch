@@ -94,13 +94,23 @@
           />
 
           <label class="field-label" for="cond-password">Password:</label>
-          <input
-            id="cond-password"
-            class="input-box"
-            type="password"
-            [(ngModel)]="password"
-            placeholder="Enter your password"
-          />
+          <div style="position: relative;">
+            <input
+              id="cond-password"
+              class="input-box"
+              [type]="showLoginPassword ? 'text' : 'password'"
+              [(ngModel)]="password"
+              placeholder="Enter your password"
+              style="padding-right: 60px;"
+            />
+            <button
+              type="button"
+              (click)="showLoginPassword = !showLoginPassword"
+              style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #B47792; font-weight: 700; cursor: pointer; font-size: 13px;"
+            >
+              {{ showLoginPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
 
           <button type="button" class="mauve-btn big-action-btn" (click)="login()">
             Start Shift & Lock Mini-Bus Unit
@@ -137,15 +147,25 @@
           />
 
           <label class="field-label" for="reg-password">Choose Password:</label>
-          <input
-            id="reg-password"
-            class="input-box"
-            type="password"
-            [(ngModel)]="password"
-            placeholder="Create a password"
-          />
+          <div style="position: relative;">
+            <input
+              id="reg-password"
+              class="input-box"
+              [type]="showSignupPassword ? 'text' : 'password'"
+              [(ngModel)]="password"
+              placeholder="Create a password"
+              style="padding-right: 60px;"
+            />
+            <button
+              type="button"
+              (click)="showSignupPassword = !showSignupPassword"
+              style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #B47792; font-weight: 700; cursor: pointer; font-size: 13px;"
+            >
+              {{ showSignupPassword ? 'Hide' : 'Show' }}
+            </button>
+          </div>
 
-          <button type="button" class="mauve-btn big-action-btn" (click)="signup()">
+          <button type="button" class="mauve-btn big-action-btn" (click)="confirmAndSignup()">
             Create Account & Start Shift
           </button>
         }
@@ -334,7 +354,7 @@
           </div>
         </div>
 
-        <button type="button" class="mauve-btn big-action-btn" (click)="issueTicket()">
+        <button type="button" class="mauve-btn big-action-btn" (click)="confirmAndIssueTicket()">
           Issue Ticket & Add +{{ passengerCount }} Passenger(s)
         </button>
 

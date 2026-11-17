@@ -1,5 +1,6 @@
 from datetime import datetime, date
 import hashlib
+import json
 import math
 import os
 from typing import Optional
@@ -25,6 +26,30 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 OFFICIAL_ROUTE = "Bongabon Terminal - Cabanatuan City Central Transport Terminal (via Palayan City)"
+
+# Persistent file to store Inactive bus IDs without altering the MySQL ENUM column
+INACTIVE_BUSES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inactive_buses.json")
+
+
+def load_inactive_buses() -> set:
+    if os.path.exists(INACTIVE_BUSES_FILE):
+        try:
+            with open(INACTIVE_BUSES_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+
+def save_inactive_buses(bus_ids: set):
+    try:
+        with open(INACTIVE_BUSES_FILE, "w", encoding="utf-8") as f:
+            json.dump(sorted(list(bus_ids)), f)
+    except Exception:
+        pass
+
+
+INACTIVE_BUS_IDS = load_inactive_buses()
 
 # ------------------ SQLAlchemy Models ------------------
 
@@ -118,6 +143,7 @@ class Feedback(Base):
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
+
 def compute_capacity(current_pax: int, max_seated: int, max_standing: int):
     current_pax = max(0, current_pax)
     avail_seats = max(0, max_seated - current_pax)
@@ -129,6 +155,7 @@ def compute_capacity(current_pax: int, max_seated: int, max_standing: int):
     else:
         status = "Seats Available"
     return avail_seats, standing, status
+
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
@@ -153,6 +180,7 @@ def compute_fare(distance_km: float, passenger_type: str, passenger_count: int) 
     else:
         unit_fare = round(unit_fare)         # ₱83.00 (or round(unit_fare, 2) for ₱82.50)
     return round(unit_fare * max(1, passenger_count), 2)
+
 
 def seed_initial_data():
     Base.metadata.create_all(bind=engine)
@@ -202,6 +230,7 @@ def seed_initial_data():
     finally:
         db.close()
 
+
 seed_initial_data()
 
 # ------------------ FastAPI Setup ------------------
@@ -216,6 +245,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -223,8 +253,11 @@ def get_db():
     finally:
         db.close()
 
+
 def serialize_bus(b: Bus) -> dict:
-    avail, standing, status = compute_capacity(b.current_passengers, b.max_seated, b.max_standing)
+    is_inactive = (b.bus_id in INACTIVE_BUS_IDS) or (b.status == "Inactive")
+    avail, standing, computed_status = compute_capacity(b.current_passengers, b.max_seated, b.max_standing)
+    final_status = "Inactive" if is_inactive else computed_status
     return {
         "bus_id": b.bus_id,
         "plate_number": b.plate_number,
@@ -234,14 +267,15 @@ def serialize_bus(b: Bus) -> dict:
         "route_name": b.route_name,
         "lat": float(b.lat),
         "lng": float(b.lng),
-        "current_passengers": b.current_passengers,
+        "current_passengers": 0 if is_inactive else b.current_passengers,
         "max_seated": b.max_seated,
         "max_standing": b.max_standing,
-        "available_seats": avail,
-        "standing_count": standing,
-        "status": status,
+        "available_seats": 0 if is_inactive else avail,
+        "standing_count": 0 if is_inactive else standing,
+        "status": final_status,
         "updated_at": b.updated_at.isoformat() if b.updated_at else "",
     }
+
 
 # ------------------ Request Schemas ------------------
 
@@ -254,11 +288,13 @@ class SignUpPayload(BaseModel):
     license_number: Optional[str] = ""
     assigned_bus_id: Optional[str] = "BUS-101"
 
+
 class LoginPayload(BaseModel):
     username: str
     password: str
     role: Optional[str] = None
     assigned_bus_id: Optional[str] = None
+
 
 class BusUpdatePayload(BaseModel):
     bus_id: str
@@ -269,6 +305,7 @@ class BusUpdatePayload(BaseModel):
     max_seated: int = 30
     max_standing: int = 15
     event_source: str = "Dispatcher"
+
 
 class BusRegisterPayload(BaseModel):
     bus_id: str
@@ -282,6 +319,7 @@ class BusRegisterPayload(BaseModel):
     max_seated: int = 30
     max_standing: int = 15
 
+
 class TicketIssuePayload(BaseModel):
     bus_id: str
     issued_by_user_id: Optional[int] = None
@@ -290,9 +328,11 @@ class TicketIssuePayload(BaseModel):
     passenger_type: str = "Regular"  # Regular or Discounted
     passenger_count: int = 1
 
+
 class DropOffPayload(BaseModel):
     bus_id: str
     destination_stop_id: int
+
 
 class FeedbackPayload(BaseModel):
     bus_id: str
@@ -300,6 +340,12 @@ class FeedbackPayload(BaseModel):
     passenger_name: str = "Anonymous"
     category: str = "General Concern"
     message: str
+
+
+class BusStatusPayload(BaseModel):
+    bus_id: str
+    status: str  # "Active" or "Inactive"
+
 
 # ------------------ 1. Authentication Endpoints ------------------
 
@@ -331,6 +377,7 @@ def signup(payload: SignUpPayload, db: Session = Depends(get_db)):
         "assigned_bus_id": new_user.assigned_bus_id,
     }
 
+
 @app.post("/api/auth/login")
 def login(payload: LoginPayload, db: Session = Depends(get_db)):
     user = db.query(User).filter(
@@ -353,6 +400,7 @@ def login(payload: LoginPayload, db: Session = Depends(get_db)):
         "role": user.role,
         "assigned_bus_id": user.assigned_bus_id or "BUS-101",
     }
+
 
 # ------------------ 2. Stops & Fleet Endpoints ------------------
 
@@ -398,11 +446,46 @@ def delete_bus_stop(stop_id: int, db: Session = Depends(get_db)):
     reorder_stops_safely(db)
 
     return {"message": f"Removed '{removed_name}' and updated route!"}
-    
+
+
 @app.get("/api/buses")
-def get_buses(db: Session = Depends(get_db)):
+def get_buses(include_inactive: bool = False, db: Session = Depends(get_db)):
     buses = db.query(Bus).order_by(Bus.bus_id).all()
+    if not include_inactive:
+        buses = [b for b in buses if b.bus_id not in INACTIVE_BUS_IDS and b.status != "Inactive"]
     return [serialize_bus(b) for b in buses]
+
+
+@app.post("/api/buses/status")
+def update_bus_operational_status(payload: BusStatusPayload, db: Session = Depends(get_db)):
+    bus = db.query(Bus).filter(Bus.bus_id == payload.bus_id).first()
+    if not bus:
+        raise HTTPException(status_code=404, detail="Bus not found")
+
+    if payload.status.strip().lower() == "inactive":
+        INACTIVE_BUS_IDS.add(bus.bus_id)
+        save_inactive_buses(INACTIVE_BUS_IDS)
+
+        # Keep MySQL ENUM column valid ("Seats Available") while clearing passengers and tickets
+        bus.current_passengers = 0
+        bus.status = "Seats Available"
+        active_tickets = db.query(Ticket).filter(
+            Ticket.bus_id == bus.bus_id,
+            Ticket.is_onboard == True,
+        ).all()
+        for t in active_tickets:
+            t.is_onboard = False
+            t.alighted_at = datetime.now()
+    else:
+        INACTIVE_BUS_IDS.discard(bus.bus_id)
+        save_inactive_buses(INACTIVE_BUS_IDS)
+        _, _, bus.status = compute_capacity(bus.current_passengers, bus.max_seated, bus.max_standing)
+
+    bus.updated_at = datetime.now()
+    db.commit()
+    db.refresh(bus)
+    return {"message": f"Updated {bus.bus_id} to {payload.status}", "bus": serialize_bus(bus)}
+
 
 @app.post("/api/buses/register")
 def register_bus(payload: BusRegisterPayload, db: Session = Depends(get_db)):
@@ -430,11 +513,20 @@ def register_bus(payload: BusRegisterPayload, db: Session = Depends(get_db)):
     db.refresh(bus)
     return {"message": f"Saved {bus.bus_id}", "bus": serialize_bus(bus)}
 
+
 @app.post("/api/buses/update")
 def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
     bus = db.query(Bus).filter(Bus.bus_id == payload.bus_id).first()
     if not bus:
         raise HTTPException(status_code=404, detail="Bus not found")
+
+    # Ignore background GPS simulator / conductor pings if the bus is marked Inactive
+    if bus.bus_id in INACTIVE_BUS_IDS:
+        if payload.event_source == "Terminal Dispatch":
+            INACTIVE_BUS_IDS.discard(bus.bus_id)
+            save_inactive_buses(INACTIVE_BUS_IDS)
+        else:
+            return {"bus": serialize_bus(bus), "passenger_delta": 0}
 
     prev_pax = bus.current_passengers
     bus.route_name = payload.route_name
@@ -466,6 +558,7 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
     db.refresh(bus)
     return {"bus": serialize_bus(bus), "passenger_delta": delta}
 
+
 @app.get("/api/logs")
 def get_logs(bus_id: Optional[str] = None, limit: int = 12, db: Session = Depends(get_db)):
     q = db.query(PassengerLog)
@@ -488,6 +581,7 @@ def get_logs(bus_id: Optional[str] = None, limit: int = 12, db: Session = Depend
         }
         for l in logs
     ]
+
 
 # ------------------ 3. Ticketing, Auto-Boarding & Smart Drop-Offs ------------------
 
@@ -557,6 +651,7 @@ def issue_ticket(payload: TicketIssuePayload, db: Session = Depends(get_db)):
         "bus": serialize_bus(bus),
     }
 
+
 @app.get("/api/tickets/dropoffs/{bus_id}")
 def get_active_dropoffs(bus_id: str, db: Session = Depends(get_db)):
     stops = {s.stop_id: s for s in db.query(BusStop).all()}
@@ -584,6 +679,7 @@ def get_active_dropoffs(bus_id: str, db: Session = Depends(get_db)):
         grouped[st.stop_id]["ticket_count"] += 1
 
     return sorted(grouped.values(), key=lambda x: x["stop_order"])
+
 
 @app.post("/api/tickets/dropoff")
 def clear_stop_dropoffs(payload: DropOffPayload, db: Session = Depends(get_db)):
@@ -628,6 +724,7 @@ def clear_stop_dropoffs(payload: DropOffPayload, db: Session = Depends(get_db)):
         "bus": serialize_bus(bus),
     }
 
+
 @app.get("/api/tickets")
 def list_tickets(bus_id: Optional[str] = None, limit: int = 20, db: Session = Depends(get_db)):
     stops = {s.stop_id: s.stop_name for s in db.query(BusStop).all()}
@@ -651,6 +748,7 @@ def list_tickets(bus_id: Optional[str] = None, limit: int = 20, db: Session = De
         for t in items
     ]
 
+
 @app.get("/api/remittance")
 def get_daily_remittance(bus_id: Optional[str] = None, db: Session = Depends(get_db)):
     buses = db.query(Bus).order_by(Bus.bus_id).all()
@@ -673,6 +771,7 @@ def get_daily_remittance(bus_id: Optional[str] = None, db: Session = Depends(get
         })
     return summary
 
+
 # ------------------ 4. Feedback Endpoints ------------------
 
 @app.post("/api/feedback")
@@ -690,6 +789,7 @@ def create_feedback(payload: FeedbackPayload, db: Session = Depends(get_db)):
     db.refresh(fb)
     return {"message": "Feedback submitted", "feedback_id": fb.feedback_id}
 
+
 @app.get("/api/feedback")
 def get_feedback(db: Session = Depends(get_db)):
     items = db.query(Feedback).order_by(Feedback.feedback_id.desc()).limit(30).all()
@@ -706,6 +806,7 @@ def get_feedback(db: Session = Depends(get_db)):
         for f in items
     ]
 
+
 @app.put("/api/feedback/{feedback_id}/resolve")
 def resolve_feedback(feedback_id: int, db: Session = Depends(get_db)):
     fb = db.query(Feedback).filter(Feedback.feedback_id == feedback_id).first()
@@ -715,6 +816,7 @@ def resolve_feedback(feedback_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Resolved", "feedback_id": feedback_id}
 
+
 # ------------------ 5. Embedded Live Dispatcher Map Endpoint ------------------
 
 class NewStopRequest(BaseModel):
@@ -723,9 +825,11 @@ class NewStopRequest(BaseModel):
     lat: float
     lng: float
 
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=204)
+
 
 def reorder_stops_safely(db: Session):
     """
@@ -739,16 +843,15 @@ def reorder_stops_safely(db: Session):
         key=lambda s: (float(s.lat) + float(s.lng)),
         reverse=True,
     )
-    # Step 1: Move all stop_order values to a temporary 1000+ range to clear unique collisions
     for idx, s in enumerate(sorted_stops, start=1):
         s.stop_order = 1000 + idx
     db.flush()
 
-    # Step 2: Assign clean 1..N sequential order
     for idx, s in enumerate(sorted_stops, start=1):
         s.stop_order = idx
     db.commit()
     return sorted_stops
+
 
 @app.post("/api/stops")
 def add_new_bus_stop(payload: NewStopRequest, db: Session = Depends(get_db)):
@@ -757,7 +860,6 @@ def add_new_bus_stop(payload: NewStopRequest, db: Session = Depends(get_db)):
     if not clean_name:
         raise HTTPException(status_code=400, detail="Stop name is required.")
 
-    # Insert with a unique high temporary stop_order first
     temp_order = 9000 + db.query(BusStop).count()
     new_stop = BusStop(
         stop_name=clean_name,
@@ -770,7 +872,6 @@ def add_new_bus_stop(payload: NewStopRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_stop)
 
-    # Safely re-order all stops without triggering MySQL 1062 duplicate key error
     reorder_stops_safely(db)
 
     return {
@@ -829,7 +930,6 @@ def get_live_leaflet_map():
         </div>
 
         <div class="add-stop-bar">
-            
             <b>Search Location:</b>
             <input
                 id="mapSearchInput"
@@ -840,7 +940,7 @@ def get_live_leaflet_map():
             />
             <button class="mauve-btn" onclick="searchDispatcherMap()">Search</button>
             <span>|</span>
-            
+
             <b>Add Stop:</b>
             <input id="stopName" class="input-box" placeholder="Location Name (e.g. Brgy. Cruz)" style="width: 190px;" />
             <select id="stopMuni" class="input-box">
@@ -898,7 +998,11 @@ def get_live_leaflet_map():
                 const badge = document.getElementById('statusBadge');
 
                 if (!name) { alert('Please type a Location Name first.'); return; }
-                if (isNaN(lat) || isNaN(lng)) { alert('Please click on the map first.'); return; }
+                if (isNaN(lat) || isNaN(lng)) { alert('Please click on the map or search a place first.'); return; }
+
+                if (!confirm(`Are you sure you want to add "${name}" (${muni}) to the official route?`)) {
+                    return;
+                }
 
                 const res = await fetch('/api/stops', {
                     method: 'POST',
@@ -912,7 +1016,7 @@ def get_live_leaflet_map():
                         map.removeLayer(tempClickMarker);
                         tempClickMarker = null;
                     }
-                    badge.textContent = `Added "${name}" — Route Sorted!`;
+                    badge.textContent = `Added "${name}" — Route Auto-Sorted!`;
                     badge.style.background = '#c8e6c9';
                     badge.style.color = '#1b5e20';
                     await loadRoadRoute();
@@ -920,6 +1024,10 @@ def get_live_leaflet_map():
             }
 
             async function deleteStopById(stopId, stopName) {
+                if (!confirm(`Are you sure you want to remove stop "${stopName}" from the route?`)) {
+                    return;
+                }
+
                 const badge = document.getElementById('statusBadge');
                 const res = await fetch(`/api/stops/${stopId}`, { method: 'DELETE' });
                 if (res.ok) {
@@ -942,10 +1050,9 @@ def get_live_leaflet_map():
                 const res = await fetch('/api/stops');
                 const rawStops = await res.json();
 
-                // Auto-sort by geographic location (Bongabon North-East -> Cabanatuan South-West)
                 const stops = rawStops.sort((a, b) => (Number(b.lat) + Number(b.lng)) - (Number(a.lat) + Number(a.lng)));
                 cachedStops = stops;
-                
+
                 stopMarkers.forEach(m => map.removeLayer(m));
                 stopMarkers = [];
 
@@ -985,13 +1092,12 @@ def get_live_leaflet_map():
                 if (routePolyline) { map.removeLayer(routePolyline); }
                 routePolyline = L.polyline(routeCoords, { color: '#B47792', weight: 5, opacity: 0.9 }).addTo(map);
             }
-            
+
             async function searchDispatcherMap() {
                 const query = document.getElementById('mapSearchInput').value.trim();
                 const badge = document.getElementById('statusBadge');
                 if (!query) return;
 
-                // 1. Check if the typed search matches an existing official route stop
                 const qLower = query.toLowerCase();
                 const matchedStop = cachedStops.find(
                     s => s.stop_name.toLowerCase().includes(qLower) || s.municipality.toLowerCase().includes(qLower)
@@ -1002,7 +1108,6 @@ def get_live_leaflet_map():
                     return;
                 }
 
-                // 2. Otherwise search OpenStreetMap Nominatim for the place name
                 try {
                     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Nueva Ecija, Philippines')}&limit=1`;
                     const res = await fetch(url);
@@ -1033,10 +1138,20 @@ def get_live_leaflet_map():
                     badge.textContent = 'Search unavailable offline';
                 }
             }
-                        
+
             async function syncBuses() {
                 const res = await fetch('/api/buses');
                 const buses = await res.json();
+
+                // Remove markers for buses marked Inactive
+                const activeIds = new Set(buses.map(b => b.bus_id));
+                Object.keys(busMarkers).forEach(id => {
+                    if (!activeIds.has(id)) {
+                        map.removeLayer(busMarkers[id]);
+                        delete busMarkers[id];
+                    }
+                });
+
                 buses.forEach(b => {
                     const html = `<div style="background:#B47792;color:#fff;padding:4px 10px;border-radius:10px;font-weight:700;font-size:12px;border:2px solid #FA9EBC;white-space:nowrap;"> ${b.bus_id} (${b.available_seats} free)</div>`;
                     const icon = L.divIcon({ html, className: '', iconSize: [130, 26], iconAnchor: [65, 13] });
@@ -1056,6 +1171,7 @@ def get_live_leaflet_map():
     </body>
     </html>
     """
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

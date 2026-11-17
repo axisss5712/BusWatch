@@ -50,6 +50,27 @@ export class HomePage implements OnInit, OnDestroy {
   originDropdownOpen: boolean = false;
   destDropdownOpen: boolean = false;
 
+  showLoginPassword: boolean = false;
+  showSignupPassword: boolean = false;
+
+  confirmAndSignup(): void {
+    if (confirm('Are you sure you want to create this conductor account?')) {
+      this.signup();
+    }
+  }
+
+  confirmAndLogout(): void {
+    if (confirm('Are you sure you want to log out?')) {
+      this.logout();
+    }
+  }
+
+  confirmAndIssueTicket(): void {
+    if (confirm(`Are you sure you want to issue this ticket for ${this.passengerCount} passenger(s)?`)) {
+      this.issueTicket();
+    }
+  }
+  
   getStopLabel(stopId: number): string {
     const s = this.stops.find((item) => item.stop_id === Number(stopId));
     return s ? `${s.stop_name} (${s.municipality})` : 'Select location';
