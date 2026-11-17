@@ -1,0 +1,15 @@
+**/node_modules/
+**/www/
+**/.angular/
+**/build/
+**/.gradle/
+**/__pycache__/
+*.pyc
+*.apk
+**/oracleJdk*/
+**/node_modules/
+**/www/
+**/.angular/
+**/build/
+**/.gradle/
+*.apk

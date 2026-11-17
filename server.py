@@ -520,7 +520,6 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
     if not bus:
         raise HTTPException(status_code=404, detail="Bus not found")
 
-    # Ignore background GPS simulator / conductor pings if the bus is marked Inactive
     if bus.bus_id in INACTIVE_BUS_IDS:
         if payload.event_source == "Terminal Dispatch":
             INACTIVE_BUS_IDS.discard(bus.bus_id)
@@ -541,21 +540,31 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
     bus.updated_at = datetime.now()
 
     delta = bus.current_passengers - prev_pax
-    db.add(
-        PassengerLog(
-            bus_id=bus.bus_id,
-            event_source=payload.event_source,
-            passenger_delta=delta,
-            current_passengers=bus.current_passengers,
-            available_seats=avail,
-            standing_count=standing,
-            status=status,
-            lat=bus.lat,
-            lng=bus.lng,
-        )
-    )
+
+    # Commit the GPS movement first so a log table schema mismatch never blocks movement
     db.commit()
     db.refresh(bus)
+
+    # Only log when passenger count changes or when triggered by Dispatcher/Conductor
+    if delta != 0 or payload.event_source != "GPS Simulator":
+        try:
+            db.add(
+                PassengerLog(
+                    bus_id=bus.bus_id,
+                    event_source=payload.event_source,
+                    passenger_delta=delta,
+                    current_passengers=bus.current_passengers,
+                    available_seats=avail,
+                    standing_count=standing,
+                    status=status,
+                    lat=bus.lat,
+                    lng=bus.lng,
+                )
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return {"bus": serialize_bus(bus), "passenger_delta": delta}
 
 

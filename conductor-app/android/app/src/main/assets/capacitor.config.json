@@ -1,0 +1,9 @@
+{
+	"appId": "io.ionic.starter",
+	"appName": "conductor-app",
+	"webDir": "www",
+	"server": {
+		"androidScheme": "http",
+		"cleartext": true
+	}
+}

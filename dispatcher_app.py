@@ -1045,20 +1045,7 @@ def main(page: ft.Page):
                         ft.Row(
                             [
                                 bus_selector,
-                                ft.Button(
-                                    "Set Selected Bus Inactive (Repair / No Crew)",
-                                    icon=ft.Icons.BUILD_CIRCLE,
-                                    height=46,
-                                    bgcolor="#ffcdd2",
-                                    color="#b71c1c",
-                                    on_click=lambda _: toggle_bus_status(bus_selector.value, "Active"),
-                                ),
-                                ft.Text(
-                                    "To reactivate a bus, open Tab 2 (Permanent Fleet Vehicles) and click 'Set Active'.",
-                                    size=12,
-                                    italic=True,
-                                    color=TEXT_DARK,
-                                ),
+                                
                             ],
                             wrap=True,
                         ),

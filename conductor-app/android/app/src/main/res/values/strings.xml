@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">conductor-app</string>
-    <string name="title_activity_main">conductor-app</string>
-    <string name="package_name">io.ionic.starter</string>
-    <string name="custom_url_scheme">io.ionic.starter</string>
+    <string name="app_name">BusWatch Conductor</string>
+    <string name="title_activity_main">BusWatch Conductor</string>
+    <string name="package_name">com.buswatch.conductor</string>
+    <string name="custom_url_scheme">com.buswatch.conductor</string>
 </resources>
