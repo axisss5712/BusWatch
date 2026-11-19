@@ -1185,8 +1185,14 @@ def get_live_leaflet_map():
                 });
 
                 buses.forEach(b => {
-                    const html = `<div style="background:#B47792;color:#fff;padding:4px 10px;border-radius:10px;font-weight:700;font-size:12px;border:2px solid #FA9EBC;white-space:nowrap;"> ${b.bus_id} (${b.available_seats} free)</div>`;
-                    const icon = L.divIcon({ html, className: '', iconSize: [130, 26], iconAnchor: [65, 13] });
+                    const html = `<div style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);display:inline-flex;align-items:center;justify-content:center;width:max-content;box-sizing:border-box;background:#B47792;color:#fff;padding:3px 8px;border-radius:999px;font-weight:700;font-size:11px;line-height:1.2;border:2px solid #FA9EBC;white-space:nowrap;box-shadow:0 2px 5px rgba(0,0,0,0.25);">${b.bus_id}</div>`;
+                    const icon = L.divIcon({
+                        html,
+                        className: '',
+                        iconSize: [0, 0],
+                        iconAnchor: [0, 0],
+                        popupAnchor: [0, -14]
+                    });
                     const popup = `<b>${b.bus_id} (${b.plate_number})</b><br>Driver: ${b.driver_name}<br>Conductor: ${b.conductor_name}<br>Onboard: ${b.current_passengers}<br>Seats Available: ${b.available_seats}<br>Status: ${b.status}`;
                     if (busMarkers[b.bus_id]) {
                         busMarkers[b.bus_id].setLatLng([b.lat, b.lng]).setIcon(icon).setPopupContent(popup);
