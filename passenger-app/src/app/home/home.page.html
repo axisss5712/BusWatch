@@ -201,6 +201,12 @@
           </div>
         </div>
 
+        @if (selectedStopId === 0) {
+          <div class="success-box" style="margin-top: 8px; margin-bottom: 4px;">
+            {{ exactLocationStatus }}
+          </div>
+        }
+
         <!-- Clear Elderly-Friendly Fare & Distance Summary Box -->
         @if (selectedStopId === 0 || selectedStopId !== destinationStopId) {
           <div class="fare-summary-box">
@@ -399,6 +405,14 @@
         @if (fbStatus) {
           <div class="success-box">{{ fbStatus }}</div>
         }
+
+        @if (fbStatus) {
+          <div class="success-box">{{ fbStatus }}</div>
+        }
+        @if (fbError) {
+          <div class="error-box">{{ fbError }}</div>
+        }
+
       </div>
     }
   </div>

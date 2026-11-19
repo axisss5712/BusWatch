@@ -181,15 +181,20 @@
       <!-- LIVE BUS STATUS & DAILY COLLECTION SUMMARY -->
       <div class="theme-card telemetry-card">
         <div class="header-top">
-          <div>
-            <span class="step-badge">ACTIVE UNIT</span>
-            <h2 class="card-title" style="margin: 0; color: #2D262B;">
-              {{ selectedBusId }} ({{ activeBus?.status || 'Seats Available' }})
-            </h2>
-          </div>
-          <span class="gps-pill">{{ gpsStatus }}</span>
-        </div>
+       <div>
+         <span class="step-badge">{{ isBusInactive ? 'INACTIVE UNIT' : 'ACTIVE UNIT' }}</span>
+         <h2 class="card-title" style="margin: 0; color: #2D262B;">
+           {{ selectedBusId }} ({{ activeBus?.status || 'Inactive' }})
+         </h2>
+       </div>
+       <span class="gps-pill">{{ gpsStatus }}</span>
+     </div>
 
+     @if (isBusInactive) {
+       <div class="error-box" style="margin-top: 10px;">
+         {{ selectedBusId }} is currently marked INACTIVE by the Dispatcher. Ticketing is paused until it is set back to Active.
+       </div>
+      }
         <!-- Big 3-Box Load Counter -->
         <div class="stat-grid">
           <div class="stat-box">
@@ -354,12 +359,21 @@
           </div>
         </div>
 
-        <button type="button" class="mauve-btn big-action-btn" (click)="confirmAndIssueTicket()">
-          Issue Ticket & Add +{{ passengerCount }} Passenger(s)
+        <button
+          type="button"
+          class="mauve-btn big-action-btn"
+          [disabled]="isBusInactive"
+          [style.opacity]="isBusInactive ? '0.5' : '1'"
+          (click)="confirmAndIssueTicket()"
+        >
+          {{ isBusInactive ? 'Unit Inactive — Ticketing Paused' : 'Issue Ticket & Add +' + passengerCount + ' Passenger(s)' }}
         </button>
 
         @if (ticketSuccessMsg) {
           <div class="success-box">{{ ticketSuccessMsg }}</div>
+        }
+        @if (ticketErrorMsg) {
+          <div class="error-box">{{ ticketErrorMsg }}</div>
         }
       </div>
 

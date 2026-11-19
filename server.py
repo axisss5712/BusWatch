@@ -175,10 +175,10 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 def compute_fare(distance_km: float, passenger_type: str, passenger_count: int) -> float:
     # Base ₱15.00 for first 4 km + ₱2.5763 per succeeding km
     unit_fare = 15.0 + max(0.0, distance_km - 4.0) * 2.5763
-    if passenger_type == "Discounted":
-        unit_fare = round(unit_fare * 0.80)  # ₱66.00 for 30.2 km
+    if (passenger_type or "").strip().lower() == "discounted":
+        unit_fare = round(unit_fare * 0.80)
     else:
-        unit_fare = round(unit_fare)         # ₱83.00 (or round(unit_fare, 2) for ₱82.50)
+        unit_fare = round(unit_fare)
     return round(unit_fare * max(1, passenger_count), 2)
 
 
@@ -431,6 +431,9 @@ def get_bus_stops(db: Session = Depends(get_db)):
 
 @app.delete("/api/stops/{stop_id}")
 def delete_bus_stop(stop_id: int, db: Session = Depends(get_db)):
+    if db.query(BusStop).count() <= 2:
+        raise HTTPException(status_code=400, detail="Route must keep at least 2 stops.")
+
     stop = db.query(BusStop).filter(BusStop.stop_id == stop_id).first()
     if not stop:
         raise HTTPException(status_code=404, detail="Stop not found.")
@@ -527,6 +530,10 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
         else:
             return {"bus": serialize_bus(bus), "passenger_delta": 0}
 
+    # Passenger counts are managed by ticketing/dropoffs and coordinates by the simulator
+    if payload.event_source == "Conductor GPS":
+        return {"bus": serialize_bus(bus), "passenger_delta": 0}
+
     prev_pax = bus.current_passengers
     bus.route_name = payload.route_name
     bus.lat = payload.lat
@@ -541,11 +548,9 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
 
     delta = bus.current_passengers - prev_pax
 
-    # Commit the GPS movement first so a log table schema mismatch never blocks movement
     db.commit()
     db.refresh(bus)
 
-    # Only log when passenger count changes or when triggered by Dispatcher/Conductor
     if delta != 0 or payload.event_source != "GPS Simulator":
         try:
             db.add(
@@ -566,7 +571,6 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
             db.rollback()
 
     return {"bus": serialize_bus(bus), "passenger_delta": delta}
-
 
 @app.get("/api/logs")
 def get_logs(bus_id: Optional[str] = None, limit: int = 12, db: Session = Depends(get_db)):
@@ -602,15 +606,28 @@ def issue_ticket(payload: TicketIssuePayload, db: Session = Depends(get_db)):
     if not origin or not dest or not bus:
         raise HTTPException(status_code=404, detail="Invalid bus or route stops selected.")
 
-    dist_km = round(max(0.5, haversine_km(origin.lat, origin.lng, dest.lat, dest.lng)), 2)
+    if bus.bus_id in INACTIVE_BUS_IDS or bus.status == "Inactive":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot issue ticket: {bus.bus_id} is currently marked Inactive by the Dispatcher.",
+        )
 
-    # Philippine Mini-Bus Pricing Formula: ₱15.00 first 4 km + ₱2.20 per succeeding km
-    unit_fare = 15.00 + max(0.0, dist_km - 4.0) * 2.20
-    if payload.passenger_type.lower() == "discounted":
-        unit_fare *= 0.80  # 20% discount for Student / Senior / PWD
+    if origin.stop_id == dest.stop_id:
+        raise HTTPException(status_code=400, detail="Origin Stop and Destination Stop must be different.")
 
     pax_count = max(1, payload.passenger_count)
-    total_fare = round(unit_fare * pax_count, 2)
+    max_cap = bus.max_seated + bus.max_standing
+    if bus.current_passengers + pax_count > max_cap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot issue ticket: {bus.bus_id} is at capacity ({bus.current_passengers}/{max_cap}).",
+        )
+
+    dist_km = round(max(0.5, haversine_km(origin.lat, origin.lng, dest.lat, dest.lng)), 2)
+
+    normalized_type = "Discounted" if payload.passenger_type.strip().lower() == "discounted" else "Regular"
+    total_fare = compute_fare(dist_km, normalized_type, pax_count)
+    unit_fare = round(total_fare / pax_count, 2)
 
     ticket = Ticket(
         bus_id=bus.bus_id,
@@ -618,14 +635,13 @@ def issue_ticket(payload: TicketIssuePayload, db: Session = Depends(get_db)):
         origin_stop_id=origin.stop_id,
         destination_stop_id=dest.stop_id,
         distance_km=dist_km,
-        passenger_type=payload.passenger_type,
+        passenger_type=normalized_type,
         passenger_count=pax_count,
         fare_amount=total_fare,
         is_onboard=True,
     )
     db.add(ticket)
 
-    # Auto-Boarding: automatically increment current_passengers
     bus.current_passengers += pax_count
     avail, standing, status = compute_capacity(bus.current_passengers, bus.max_seated, bus.max_standing)
     bus.status = status
@@ -655,11 +671,10 @@ def issue_ticket(payload: TicketIssuePayload, db: Session = Depends(get_db)):
         "distance_km": dist_km,
         "passenger_type": ticket.passenger_type,
         "passenger_count": pax_count,
-        "unit_fare": round(unit_fare, 2),
+        "unit_fare": unit_fare,
         "total_fare": total_fare,
         "bus": serialize_bus(bus),
     }
-
 
 @app.get("/api/tickets/dropoffs/{bus_id}")
 def get_active_dropoffs(bus_id: str, db: Session = Depends(get_db)):
@@ -785,11 +800,20 @@ def get_daily_remittance(bus_id: Optional[str] = None, db: Session = Depends(get
 
 @app.post("/api/feedback")
 def create_feedback(payload: FeedbackPayload, db: Session = Depends(get_db)):
+    valid_categories = {
+        "Left Item / Lost & Found",
+        "Driver/Conductor Courtesy",
+        "Overloading",
+        "Mechanical Delay",
+        "General Concern",
+    }
+    clean_category = payload.category if payload.category in valid_categories else "General Concern"
+
     fb = Feedback(
         bus_id=payload.bus_id,
         user_id=payload.user_id,
         passenger_name=payload.passenger_name.strip() or "Anonymous",
-        category=payload.category,
+        category=clean_category,
         message=payload.message.strip(),
         status="Pending",
     )
@@ -797,7 +821,6 @@ def create_feedback(payload: FeedbackPayload, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(fb)
     return {"message": "Feedback submitted", "feedback_id": fb.feedback_id}
-
 
 @app.get("/api/feedback")
 def get_feedback(db: Session = Depends(get_db)):
