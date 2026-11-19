@@ -1,3 +1,5 @@
+import threading
+import time
 import webbrowser
 import flet as ft
 import requests
@@ -11,6 +13,7 @@ PASTEL_PINK = "#FA9EBC"
 TEXT_DARK = "#2D262B"
 
 OFFICIAL_ROUTE = "Bongabon Terminal - Cabanatuan City Central Transport Terminal (via Palayan City)"
+AUTO_REFRESH_SECONDS = 5
 
 
 def input_border(color: str = ACCENT_MAUVE):
@@ -49,6 +52,9 @@ def main(page: ft.Page):
     stops_list = []
     stops_cache = {}
     buses_cache = {}
+    sync_lock = threading.Lock()
+    stop_auto_refresh = threading.Event()
+    auto_refresh_enabled = {"value": True}
 
     server_ip = ft.TextField(
         label="Server Address (Change IP here if network changes)",
@@ -70,7 +76,7 @@ def main(page: ft.Page):
         border_radius=10,
         border=ft.Border.all(1.5, ACCENT_MAUVE),
         content=ft.Text(
-            "Welcome! Please log in with your Dispatcher account to begin.",
+            "Welcome! Please log in with your account to begin.",
             size=15,
             weight=ft.FontWeight.BOLD,
             color=TEXT_DARK,
@@ -84,7 +90,10 @@ def main(page: ft.Page):
         page.update()
 
     def base_url() -> str:
-        return server_ip.value.strip().rstrip("/")
+        raw = (server_ip.value or "").strip().rstrip("/")
+        if raw and not raw.startswith(("http://", "https://")):
+            raw = "http://" + raw
+        return raw
 
     # =========================================================================
     # BUILT-IN CONFIRMATION CARD (WORKS ACROSS ALL FLET VERSIONS)
@@ -163,7 +172,7 @@ def main(page: ft.Page):
     # =========================================================================
     # SEPARATED AUTHENTICATION VIEW (LOG IN vs. CREATE ACCOUNT)
     # =========================================================================
-    auth_title = ft.Text("Dispatcher Log In", size=24, weight=ft.FontWeight.BOLD, color=ACCENT_MAUVE)
+    auth_title = ft.Text("Log In", size=24, weight=ft.FontWeight.BOLD, color=ACCENT_MAUVE)
     auth_subtitle = ft.Text(
         "Enter your cooperative username and password below:",
         size=14,
@@ -171,7 +180,7 @@ def main(page: ft.Page):
     )
 
     auth_username = ft.TextField(
-        label="Dispatcher Username",
+        label="Username",
         value="",
         width=380,
         text_size=16,
@@ -207,7 +216,7 @@ def main(page: ft.Page):
         auth_fullname.visible = is_signup
         auth_contact.visible = is_signup
         if is_signup:
-            auth_title.value = "Create New Dispatcher Account"
+            auth_title.value = "Create New Account"
             auth_subtitle.value = "Fill in all boxes below to register a new dispatcher account."
             btn_mode_login.bgcolor = BG_CREAM
             btn_mode_login.color = TEXT_DARK
@@ -216,7 +225,7 @@ def main(page: ft.Page):
             btn_submit_login.visible = False
             btn_submit_signup.visible = True
         else:
-            auth_title.value = "Dispatcher Log In"
+            auth_title.value = "Log In"
             auth_subtitle.value = "Enter your cooperative username and password below."
             btn_mode_login.bgcolor = ACCENT_MAUVE
             btn_mode_login.color = CARD_WHITE
@@ -225,6 +234,12 @@ def main(page: ft.Page):
             btn_submit_login.visible = True
             btn_submit_signup.visible = False
         page.update()
+
+    def set_logged_in_ui(is_logged_in: bool):
+        auth_card.visible = not is_logged_in
+        main_workspace.visible = is_logged_in
+        btn_refresh.visible = is_logged_in
+        btn_logout.visible = is_logged_in
 
     def handle_login(e=None):
         uname = (auth_username.value or "").strip()
@@ -241,15 +256,13 @@ def main(page: ft.Page):
             if res.status_code == 200:
                 data = res.json()
                 current_user.update(data)
-                auth_card.visible = False
-                main_workspace.visible = True
-                btn_logout.visible = True
+                set_logged_in_ui(True)
                 set_status(
-                    f"Logged in as Dispatcher: {data['full_name']} (@{data['username']})",
+                    f"Logged in as: {data['full_name']} (@{data['username']})",
                     "#1b5e20",
                     "#c8e6c9",
                 )
-                sync_all()
+                sync_all(refresh_crew_inputs=True)
             else:
                 err_msg = (
                     res.json().get("detail", "Invalid username or password")
@@ -285,15 +298,13 @@ def main(page: ft.Page):
                 if res.status_code == 200:
                     data = res.json()
                     current_user.update(data)
-                    auth_card.visible = False
-                    main_workspace.visible = True
-                    btn_logout.visible = True
+                    set_logged_in_ui(True)
                     set_status(
-                        f"Account Created! Welcome, Dispatcher {data['full_name']} (@{data['username']})",
+                        f"Account Created! Welcome, {data['full_name']} (@{data['username']})",
                         "#1b5e20",
                         "#c8e6c9",
                     )
-                    sync_all()
+                    sync_all(refresh_crew_inputs=True)
                 else:
                     err_msg = (
                         res.json().get("detail", "Sign-Up failed")
@@ -306,7 +317,7 @@ def main(page: ft.Page):
 
         show_confirm_dialog(
             "Confirm Account Creation",
-            f"Are you sure you want to register Dispatcher account '{uname}'?",
+            f"Are you sure you want to register this account '{uname}'?",
             execute_signup,
         )
 
@@ -314,14 +325,12 @@ def main(page: ft.Page):
         def execute_logout():
             current_user.update({"user_id": None, "full_name": "Guest", "username": ""})
             auth_password.value = ""
-            main_workspace.visible = False
-            btn_logout.visible = False
-            auth_card.visible = True
+            set_logged_in_ui(False)
             set_status("You have logged out safely.", TEXT_DARK, SOFT_PEACH)
 
         show_confirm_dialog(
             "Confirm Log Out",
-            "Are you sure you want to log out of the Dispatcher Console?",
+            "Are you sure you want to log out?",
             execute_logout,
         )
 
@@ -343,7 +352,7 @@ def main(page: ft.Page):
     )
 
     btn_submit_login = ft.Button(
-        "Log In to Dispatcher Console",
+        "Log In",
         icon=ft.Icons.LOCK_OPEN,
         width=380,
         height=50,
@@ -394,18 +403,24 @@ def main(page: ft.Page):
     # WORKSPACE 1: TERMINAL SEND-OFF, SHIFT CREW ASSIGNMENT & LIVE CORRIDOR
     # =========================================================================
     route_corridor_row = ft.Row(wrap=True, spacing=10)
+    en_route_banner = ft.Container(
+        padding=10,
+        bgcolor=BG_CREAM,
+        border_radius=10,
+        border=ft.Border.all(1.5, PASTEL_PINK),
+        content=ft.Text(
+            "En Route on Highway: Checking live fleet positions...",
+            size=13,
+            weight=ft.FontWeight.BOLD,
+            color=TEXT_DARK,
+        ),
+    )
 
     bus_selector = ft.Dropdown(
-        label="Step 1: Select Mini-Bus Unit",
-        value="BUS-101",
-        options=[
-            ft.DropdownOption("BUS-101"),
-            ft.DropdownOption("BUS-102"),
-            ft.DropdownOption("BUS-103"),
-            ft.DropdownOption("BUS-104"),
-            ft.DropdownOption("BUS-105"),
-        ],
-        width=260,
+        label="Step 1: Select Active Mini-Bus Unit",
+        value=None,
+        options=[],
+        width=280,
     )
 
     live_occupancy_banner = ft.Container(
@@ -432,7 +447,7 @@ def main(page: ft.Page):
     )
 
     terminal_dropdown = ft.Dropdown(
-        label="Step 3: Select Departure Terminal for Send-Off",
+        label="Step 3: Select Departure Terminal for Send-Off (Terminals Only)",
         expand=True,
     )
 
@@ -543,16 +558,31 @@ def main(page: ft.Page):
     # =========================================================================
     # CORE FUNCTIONS & LOGICAL DISPATCH HANDLERS
     # =========================================================================
+    def find_nearest_stop_name(lat: float, lng: float) -> str:
+        if not stops_list:
+            return "Highway"
+        nearest = min(
+            stops_list,
+            key=lambda s: (float(s["lat"]) - lat) ** 2 + (float(s["lng"]) - lng) ** 2,
+        )
+        return nearest["stop_name"]
+
     def render_visual_route_corridor():
         route_corridor_row.controls.clear()
+        stationed_bus_ids = set()
+
+        active_buses = [b for b in buses_cache.values() if b.get("status") != "Inactive"]
+
         for s in stops_list:
-            buses_here = [
-                f"{b['bus_id']} ({b['current_passengers']} pax)"
-                for b in buses_cache.values()
-                if b.get("status") != "Inactive"
-                and abs(float(b["lat"]) - float(s["lat"])) < 0.008
-                and abs(float(b["lng"]) - float(s["lng"])) < 0.008
-            ]
+            buses_here = []
+            for b in active_buses:
+                if (
+                    abs(float(b["lat"]) - float(s["lat"])) < 0.008
+                    and abs(float(b["lng"]) - float(s["lng"])) < 0.008
+                ):
+                    buses_here.append(f"{b['bus_id']} ({b['current_passengers']} pax)")
+                    stationed_bus_ids.add(b["bus_id"])
+
             badge_text = f"At Stop: {', '.join(buses_here)}" if buses_here else "No bus currently at stop"
             route_corridor_row.controls.append(
                 ft.Container(
@@ -577,11 +607,28 @@ def main(page: ft.Page):
                 )
             )
 
-    def populate_selected_bus(e=None):
-        b = buses_cache.get(bus_selector.value)
-        if b:
-            shift_driver_input.value = b["driver_name"]
-            shift_conductor_input.value = b["conductor_name"]
+        # Show active buses currently driving between stops so they never appear to disappear
+        en_route_buses = [b for b in active_buses if b["bus_id"] not in stationed_bus_ids]
+        if not active_buses:
+            en_route_banner.content.value = "En Route on Highway: No active mini-buses currently on the route."
+            en_route_banner.content.color = "#b71c1c"
+        elif en_route_buses:
+            parts = [
+                f"{b['bus_id']} ({b['current_passengers']} pax • near {find_nearest_stop_name(float(b['lat']), float(b['lng']))})"
+                for b in en_route_buses
+            ]
+            en_route_banner.content.value = "En Route on Highway: " + "   |   ".join(parts)
+            en_route_banner.content.color = "#1b5e20"
+        else:
+            en_route_banner.content.value = "En Route on Highway: All active mini-buses are currently at stations."
+            en_route_banner.content.color = TEXT_DARK
+
+    def populate_selected_bus(e=None, refresh_crew_inputs: bool = True):
+        b = buses_cache.get(bus_selector.value) if bus_selector.value else None
+        if b and b.get("status") != "Inactive":
+            if refresh_crew_inputs:
+                shift_driver_input.value = b["driver_name"]
+                shift_conductor_input.value = b["conductor_name"]
             live_occupancy_banner.content.value = (
                 f"{b['bus_id']} ({b['plate_number']})   |   "
                 f"Ticketed Onboard: {b['current_passengers']} pax   |   "
@@ -589,13 +636,21 @@ def main(page: ft.Page):
                 f"Standing: {b['standing_count']} / {b['max_standing']}   |   "
                 f"Status: {b['status']}"
             )
-        fetch_logs()
+            fetch_logs()
+        else:
+            if refresh_crew_inputs:
+                shift_driver_input.value = ""
+                shift_conductor_input.value = ""
+            live_occupancy_banner.content.value = (
+                "No active mini-buses available. Set a unit to Active in Tab 2 (Permanent Fleet Vehicles)."
+            )
+            logs_table.rows.clear()
         page.update()
 
     if hasattr(bus_selector, "on_select"):
-        bus_selector.on_select = populate_selected_bus
+        bus_selector.on_select = lambda e: populate_selected_bus(e, refresh_crew_inputs=True)
     else:
-        bus_selector.on_change = populate_selected_bus
+        bus_selector.on_change = lambda e: populate_selected_bus(e, refresh_crew_inputs=True)
 
     def fetch_stops():
         res = requests.get(f"{base_url()}/api/stops", timeout=3)
@@ -614,15 +669,34 @@ def main(page: ft.Page):
                 stops_list.append(s)
                 label = f"{s['stop_name']} ({s['municipality']})"
                 stops_cache[label] = s
-                terminal_dropdown.options.append(ft.DropdownOption(label))
                 remove_stop_dropdown.options.append(ft.DropdownOption(label))
 
+            # Restrict Departure Terminal Send-Off strictly to the route's start & end terminals
+            terminal_stops = []
+            if len(all_stops) >= 1:
+                terminal_stops.append(all_stops[0])
+            if len(all_stops) >= 2:
+                terminal_stops.append(all_stops[-1])
+
+            terminal_labels = []
+            for ts in terminal_stops:
+                t_label = f"{ts['stop_name']} ({ts['municipality']})"
+                terminal_labels.append(t_label)
+                terminal_dropdown.options.append(ft.DropdownOption(t_label))
+
+            if terminal_labels:
+                if not terminal_dropdown.value or terminal_dropdown.value not in terminal_labels:
+                    terminal_dropdown.value = terminal_labels[0]
+            else:
+                terminal_dropdown.value = None
+
             if stops_list:
-                first_lbl = terminal_dropdown.options[0].key
-                if not terminal_dropdown.value or terminal_dropdown.value not in stops_cache:
-                    terminal_dropdown.value = first_lbl
+                first_remove_lbl = remove_stop_dropdown.options[0].key
                 if not remove_stop_dropdown.value or remove_stop_dropdown.value not in stops_cache:
-                    remove_stop_dropdown.value = first_lbl
+                    remove_stop_dropdown.value = first_remove_lbl
+            else:
+                remove_stop_dropdown.value = None
+
             render_visual_route_corridor()
 
     def remove_selected_stop(e=None):
@@ -636,13 +710,16 @@ def main(page: ft.Page):
             return
 
         def execute_remove_stop():
-            res = requests.delete(f"{base_url()}/api/stops/{target_stop['stop_id']}", timeout=3)
-            if res.status_code == 200:
-                set_status(f"Removed '{target_stop['stop_name']}' and re-sorted route!", "#1b5e20", "#c8e6c9")
-                remove_stop_dropdown.value = None
-                sync_all()
-            else:
-                set_status(f"Failed to remove stop: {res.text}", "#b71c1c", "#ffcdd2")
+            try:
+                res = requests.delete(f"{base_url()}/api/stops/{target_stop['stop_id']}", timeout=3)
+                if res.status_code == 200:
+                    set_status(f"Removed '{target_stop['stop_name']}' and re-sorted route!", "#1b5e20", "#c8e6c9")
+                    remove_stop_dropdown.value = None
+                    sync_all(refresh_crew_inputs=False)
+                else:
+                    set_status(f"Failed to remove stop: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Network error removing stop: {ex}", "#b71c1c", "#ffcdd2")
 
         show_confirm_dialog(
             "Confirm Stop Removal",
@@ -677,7 +754,7 @@ def main(page: ft.Page):
                         "#1b5e20" if new_status == "Active" else "#b71c1c",
                         "#c8e6c9" if new_status == "Active" else "#ffcdd2",
                     )
-                    sync_all()
+                    sync_all(refresh_crew_inputs=True)
                 else:
                     set_status(f"Failed to update status: {res.text}", "#b71c1c", "#ffcdd2")
             except Exception as ex:
@@ -689,13 +766,14 @@ def main(page: ft.Page):
             execute_status_change,
         )
 
-    def fetch_buses():
+    def fetch_buses(refresh_crew_inputs: bool = True):
         res = requests.get(
             f"{base_url()}/api/buses",
             params={"include_inactive": "true"},
             timeout=3,
         )
         if res.status_code == 200:
+            prev_selected = bus_selector.value
             buses_cache.clear()
             bus_selector.options.clear()
             fleet_table.rows.clear()
@@ -740,15 +818,21 @@ def main(page: ft.Page):
                         ]
                     )
                 )
-            if bus_selector.options and (
-                not bus_selector.value
-                or bus_selector.value not in [opt.key for opt in bus_selector.options]
-            ):
-                bus_selector.value = bus_selector.options[0].key
+
+            active_keys = [opt.key for opt in bus_selector.options]
+            if not active_keys:
+                bus_selector.value = None
+            elif not bus_selector.value or bus_selector.value not in active_keys:
+                bus_selector.value = active_keys[0]
+
+            selection_changed = bus_selector.value != prev_selected
             render_visual_route_corridor()
-            populate_selected_bus()
+            populate_selected_bus(refresh_crew_inputs=refresh_crew_inputs or selection_changed)
 
     def fetch_logs():
+        if not bus_selector.value:
+            logs_table.rows.clear()
+            return
         res = requests.get(f"{base_url()}/api/logs", params={"bus_id": bus_selector.value, "limit": 8}, timeout=3)
         if res.status_code == 200:
             logs_table.rows.clear()
@@ -811,9 +895,16 @@ def main(page: ft.Page):
 
     def resolve_fb(fb_id: int):
         def execute_resolve():
-            requests.put(f"{base_url()}/api/feedback/{fb_id}/resolve", timeout=3)
-            fetch_feedback()
-            page.update()
+            try:
+                res = requests.put(f"{base_url()}/api/feedback/{fb_id}/resolve", timeout=3)
+                if res.status_code == 200:
+                    set_status(f"Feedback #{fb_id} marked as Resolved.", "#1b5e20", "#c8e6c9")
+                    fetch_feedback()
+                    page.update()
+                else:
+                    set_status(f"Failed to resolve Feedback #{fb_id}: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Network error resolving feedback: {ex}", "#b71c1c", "#ffcdd2")
 
         show_confirm_dialog(
             "Confirm Feedback Resolution",
@@ -852,8 +943,8 @@ def main(page: ft.Page):
                 )
 
     def save_shift_crew_request(b: dict):
-        new_driver = (shift_driver_input.value or "").strip() or "Unassigned"
-        new_conductor = (shift_conductor_input.value or "").strip() or "Unassigned"
+        new_driver = (shift_driver_input.value or "").strip() or b.get("driver_name") or "Unassigned"
+        new_conductor = (shift_conductor_input.value or "").strip() or b.get("conductor_name") or "Unassigned"
         payload = {
             "bus_id": b["bus_id"],
             "plate_number": b["plate_number"],
@@ -868,30 +959,42 @@ def main(page: ft.Page):
 
     def update_shift_crew(e=None):
         """Updates only the active shift Driver and Conductor for the selected bus."""
-        b = buses_cache.get(bus_selector.value)
+        b = buses_cache.get(bus_selector.value) if bus_selector.value else None
         if not b:
+            set_status("Please select an active mini-bus first.", "#b71c1c", "#ffcdd2")
+            return
+
+        new_driver = (shift_driver_input.value or "").strip()
+        new_conductor = (shift_conductor_input.value or "").strip()
+        if not new_driver or not new_conductor:
+            set_status("Please enter both Driver and Conductor names before saving.", "#b71c1c", "#ffcdd2")
             return
 
         def execute_crew_update():
-            res, new_driver, new_conductor = save_shift_crew_request(b)
-            if res.status_code == 200:
-                set_status(
-                    f"Crew Updated for {b['bus_id']}: Driver {new_driver} & Conductor {new_conductor}",
-                    "#1b5e20",
-                    "#c8e6c9",
-                )
-                fetch_buses()
-                fetch_remittance_and_tickets()
+            try:
+                res, saved_driver, saved_conductor = save_shift_crew_request(b)
+                if res.status_code == 200:
+                    set_status(
+                        f"Crew Updated for {b['bus_id']}: Driver {saved_driver} & Conductor {saved_conductor}",
+                        "#1b5e20",
+                        "#c8e6c9",
+                    )
+                    sync_all(refresh_crew_inputs=True)
+                else:
+                    set_status(f"Failed to update crew: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Network error updating crew: {ex}", "#b71c1c", "#ffcdd2")
 
         show_confirm_dialog(
             "Confirm Crew Assignment",
-            f"Save on-duty crew for {b['bus_id']}?",
+            f"Save on-duty crew for {b['bus_id']} (Driver: {new_driver}, Conductor: {new_conductor})?",
             execute_crew_update,
         )
 
     def dispatch_send_off_bus(e=None):
-        b = buses_cache.get(bus_selector.value)
+        b = buses_cache.get(bus_selector.value) if bus_selector.value else None
         if not b:
+            set_status("Please select an active mini-bus first.", "#b71c1c", "#ffcdd2")
             return
 
         lbl = terminal_dropdown.value
@@ -899,47 +1002,58 @@ def main(page: ft.Page):
         if not target_stop and stops_list:
             target_stop = stops_list[0]
         if not target_stop:
+            set_status("No departure terminal available.", "#b71c1c", "#ffcdd2")
             return
 
+        onboard_now = int(b.get("current_passengers", 0))
+        warning_line = (
+            f"\n\nWARNING: {b['bus_id']} currently has {onboard_now} passenger(s) onboard. "
+            "Sending it off will clear all onboard tickets and reset passenger count to 0."
+            if onboard_now > 0
+            else "\n\nThis will position the bus at the departure terminal with 0 passengers."
+        )
+
         def execute_send_off():
-            save_shift_crew_request(b)
+            try:
+                _, saved_driver, saved_conductor = save_shift_crew_request(b)
 
-            for s in stops_list:
-                try:
-                    requests.post(
-                        f"{base_url()}/api/tickets/dropoff",
-                        json={"bus_id": b["bus_id"], "destination_stop_id": s["stop_id"]},
-                        timeout=2,
+                for s in stops_list:
+                    try:
+                        requests.post(
+                            f"{base_url()}/api/tickets/dropoff",
+                            json={"bus_id": b["bus_id"], "destination_stop_id": s["stop_id"]},
+                            timeout=2,
+                        )
+                    except Exception:
+                        pass
+
+                payload = {
+                    "bus_id": b["bus_id"],
+                    "route_name": OFFICIAL_ROUTE,
+                    "lat": float(target_stop["lat"]),
+                    "lng": float(target_stop["lng"]),
+                    "current_passengers": 0,
+                    "max_seated": int(b["max_seated"]),
+                    "max_standing": int(b["max_standing"]),
+                    "event_source": "Terminal Dispatch",
+                }
+                res = requests.post(f"{base_url()}/api/buses/update", json=payload, timeout=3)
+                if res.status_code == 200:
+                    set_status(
+                        f"Dispatched {b['bus_id']} from {target_stop['stop_name']} "
+                        f"(Driver: {saved_driver}, Conductor: {saved_conductor}) — Ready for Conductor Ticketing!",
+                        "#1b5e20",
+                        "#c8e6c9",
                     )
-                except Exception:
-                    pass
-
-            payload = {
-                "bus_id": b["bus_id"],
-                "route_name": OFFICIAL_ROUTE,
-                "lat": float(target_stop["lat"]),
-                "lng": float(target_stop["lng"]),
-                "current_passengers": 0,
-                "max_seated": int(b["max_seated"]),
-                "max_standing": int(b["max_standing"]),
-                "event_source": "Terminal Dispatch",
-            }
-            res = requests.post(f"{base_url()}/api/buses/update", json=payload, timeout=3)
-            if res.status_code == 200:
-                set_status(
-                    f"Dispatched {b['bus_id']} from {target_stop['stop_name']} "
-                    f"(Driver: {shift_driver_input.value}, Conductor: {shift_conductor_input.value}) — Ready for Conductor Ticketing!",
-                    "#1b5e20",
-                    "#c8e6c9",
-                )
-                fetch_buses()
-                fetch_logs()
-                fetch_remittance_and_tickets()
-            page.update()
+                    sync_all(refresh_crew_inputs=True)
+                else:
+                    set_status(f"Failed to dispatch bus: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Network error sending off bus: {ex}", "#b71c1c", "#ffcdd2")
 
         show_confirm_dialog(
             "Confirm Terminal Send-Off",
-            f"Are you sure you want to send off {b['bus_id']} from {target_stop['stop_name']} and start a new trip?",
+            f"Are you sure you want to send off {b['bus_id']} from {target_stop['stop_name']} and start a new trip?{warning_line}",
             execute_send_off,
         )
 
@@ -950,42 +1064,84 @@ def main(page: ft.Page):
             set_status("Bus Unit Number and Plate Number are required.", "#b71c1c", "#ffcdd2")
             return
 
+        try:
+            seated_val = int((reg_seated.value or "").strip())
+            standing_val = int((reg_standing.value or "").strip())
+            if seated_val < 1 or standing_val < 0:
+                raise ValueError()
+        except ValueError:
+            set_status(
+                "Invalid capacity: Max Seated must be at least 1 and Max Standing must be 0 or more.",
+                "#b71c1c",
+                "#ffcdd2",
+            )
+            return
+
         def execute_register_bus():
-            payload = {
-                "bus_id": bus_id_val,
-                "plate_number": plate_val,
-                "operator_name": reg_operator.value,
-                "driver_name": reg_driver.value or "Unassigned",
-                "conductor_name": reg_conductor.value or "Unassigned",
-                "route_name": OFFICIAL_ROUTE,
-                "max_seated": int(reg_seated.value or 30),
-                "max_standing": int(reg_standing.value or 15),
-            }
-            res = requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3)
-            if res.status_code == 200:
-                set_status(
-                    f"Registered Mini-Bus {payload['bus_id']} ({payload['plate_number']}) to fleet!",
-                    "#1b5e20",
-                    "#c8e6c9",
-                )
-                fetch_buses()
+            try:
+                payload = {
+                    "bus_id": bus_id_val,
+                    "plate_number": plate_val,
+                    "operator_name": (reg_operator.value or "").strip() or "Bongabon Primemovers TSC",
+                    "driver_name": (reg_driver.value or "").strip() or "Unassigned",
+                    "conductor_name": (reg_conductor.value or "").strip() or "Unassigned",
+                    "route_name": OFFICIAL_ROUTE,
+                    "max_seated": seated_val,
+                    "max_standing": standing_val,
+                }
+                res = requests.post(f"{base_url()}/api/buses/register", json=payload, timeout=3)
+                if res.status_code == 200:
+                    set_status(
+                        f"Registered Mini-Bus {payload['bus_id']} ({payload['plate_number']}) to fleet!",
+                        "#1b5e20",
+                        "#c8e6c9",
+                    )
+                    sync_all(refresh_crew_inputs=False)
+                else:
+                    set_status(f"Failed to register mini-bus: {res.text}", "#b71c1c", "#ffcdd2")
+            except Exception as ex:
+                set_status(f"Network error registering mini-bus: {ex}", "#b71c1c", "#ffcdd2")
 
         show_confirm_dialog(
             "Confirm Save Mini-Bus Profile",
-            f"Are you sure you want to save Mini-Bus {bus_id_val} ({plate_val}) to the fleet?",
+            f"Are you sure you want to save Mini-Bus {bus_id_val} ({plate_val}) with {seated_val} seated + {standing_val} standing capacity?",
             execute_register_bus,
         )
 
-    def sync_all(e=None):
+    def sync_all(e=None, refresh_crew_inputs: bool = True, silent: bool = False):
+        if current_user["user_id"] is None:
+            return
+        if not sync_lock.acquire(blocking=False):
+            return
         try:
             fetch_stops()
-            fetch_buses()
-            fetch_logs()
+            fetch_buses(refresh_crew_inputs=refresh_crew_inputs)
             fetch_remittance_and_tickets()
             fetch_feedback()
             page.update()
         except Exception as ex:
-            set_status(f"Sync Error: Cannot reach {base_url()} ({ex})", "#b71c1c", "#ffcdd2")
+            if not silent:
+                set_status(f"Sync Error: Cannot reach {base_url()} ({ex})", "#b71c1c", "#ffcdd2")
+        finally:
+            sync_lock.release()
+
+    def auto_refresh_worker():
+        while not stop_auto_refresh.wait(AUTO_REFRESH_SECONDS):
+            if (
+                auto_refresh_enabled["value"]
+                and current_user["user_id"] is not None
+                and not confirm_card.visible
+            ):
+                try:
+                    sync_all(refresh_crew_inputs=False, silent=True)
+                except Exception:
+                    pass
+
+    def handle_disconnect(e=None):
+        stop_auto_refresh.set()
+
+    page.on_disconnect = handle_disconnect
+    threading.Thread(target=auto_refresh_worker, daemon=True).start()
 
     # =========================================================================
     # WORKSPACE CONTAINERS & HIGHLIGHTED TAB NAVIGATION
@@ -1006,9 +1162,10 @@ def main(page: ft.Page):
                     controls=[
                         ft.Row(
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            wrap=True,
                             controls=[
                                 ft.Text(
-                                    "Live Route Corridor (Bongabon - Palayan City - Cabanatuan)",
+                                    "Live Route Corridor (Auto-Refreshes Every 5s)",
                                     size=18,
                                     weight=ft.FontWeight.BOLD,
                                     color=ACCENT_MAUVE,
@@ -1024,6 +1181,7 @@ def main(page: ft.Page):
                             ],
                         ),
                         route_corridor_row,
+                        en_route_banner,
                     ],
                 ),
             ),
@@ -1045,7 +1203,6 @@ def main(page: ft.Page):
                         ft.Row(
                             [
                                 bus_selector,
-                                
                             ],
                             wrap=True,
                         ),
@@ -1061,7 +1218,7 @@ def main(page: ft.Page):
                                 shift_driver_input,
                                 shift_conductor_input,
                                 ft.Button(
-                                    "Save",
+                                    "Save Crew",
                                     icon=ft.Icons.BADGE,
                                     height=48,
                                     on_click=update_shift_crew,
@@ -1092,10 +1249,15 @@ def main(page: ft.Page):
                         ),
                         ft.Divider(color=PASTEL_PINK),
                         ft.Text(
-                            "Route Stop Management (Remove Unneeded Stop)",
+                            "Route Stop Management",
                             size=14,
                             weight=ft.FontWeight.BOLD,
                             color=ACCENT_MAUVE,
+                        ),
+                        ft.Text(
+                            "Need to add a new stop along the highway? Click 'Open Road-Snapped Live Map in Browser' above to pin and save a new stop.",
+                            size=13,
+                            color=TEXT_DARK,
                         ),
                         ft.Row(
                             [
@@ -1225,7 +1387,7 @@ def main(page: ft.Page):
             btn.bgcolor = ACCENT_MAUVE if tab == key else PASTEL_PINK
             btn.color = CARD_WHITE if tab == key else TEXT_DARK
 
-        sync_all()
+        sync_all(refresh_crew_inputs=False)
 
     main_workspace = ft.Column(
         visible=False,
@@ -1242,6 +1404,16 @@ def main(page: ft.Page):
             view_remittance,
             view_feedback,
         ],
+    )
+
+    btn_refresh = ft.Button(
+        "Refresh Data",
+        icon=ft.Icons.REFRESH,
+        visible=False,
+        height=44,
+        on_click=lambda e: sync_all(e, refresh_crew_inputs=True),
+        bgcolor=PASTEL_PINK,
+        color=TEXT_DARK,
     )
 
     btn_logout = ft.Button(
@@ -1292,14 +1464,7 @@ def main(page: ft.Page):
                                         icon_color=ACCENT_MAUVE,
                                         on_click=toggle_server_ip,
                                     ),
-                                    ft.Button(
-                                        "Refresh Data",
-                                        icon=ft.Icons.REFRESH,
-                                        height=44,
-                                        on_click=sync_all,
-                                        bgcolor=PASTEL_PINK,
-                                        color=TEXT_DARK,
-                                    ),
+                                    btn_refresh,
                                     btn_logout,
                                 ],
                             ),

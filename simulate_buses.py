@@ -1,7 +1,9 @@
 import math
 import socket
+import threading
 import time
 import requests
+
 
 def get_local_lan_url() -> str:
     try:
@@ -12,6 +14,7 @@ def get_local_lan_url() -> str:
         return f"http://{ip}:8000"
     except Exception:
         return "http://127.0.0.1:8000"
+
 
 # Candidate URLs to check automatically (Localhost -> Auto LAN IP -> Saved IPs)
 CANDIDATE_URLS = [
@@ -34,11 +37,32 @@ MAX_SEGMENT_STEPS = 50      # Maximum steps between distant stops
 STOP_DWELL_TICKS = 4        # Pause at regular stops (4 ticks = 8 seconds)
 TERMINAL_DWELL_TICKS = 7    # Pause at Bongabon/Cabanatuan terminals (7 ticks = 14 seconds)
 
-HTTP_HEADERS = {"User-Agent": "BusWatchSimulator/1.0"}
+# Built-in highway curve along Bongabon -> Lusok -> Palayan City -> Cabu -> Cabanatuan
+FALLBACK_HIGHWAY_CURVE = [
+    (15.6284456, 121.1461240),  # Bongabon Terminal
+    (15.6215000, 121.1449000),
+    (15.6120000, 121.1432000),
+    (15.6012827, 121.1415366),  # Lusok
+    (15.5910000, 121.1355000),
+    (15.5815000, 121.1240000),
+    (15.5705000, 121.1100000),
+    (15.5565427, 121.0925970),  # Provincial Government of Nueva Ecija (Palayan)
+    (15.5502000, 121.0888000),
+    (15.5428881, 121.0850902),  # Palayan City Plaza Concepcion
+    (15.5345000, 121.0740000),
+    (15.5260000, 121.0625000),
+    (15.5192235, 121.0522477),  # Cabu
+    (15.5110000, 121.0380000),
+    (15.5015000, 121.0210000),
+    (15.4910000, 121.0020000),
+    (15.4815000, 120.9830000),
+    (15.4724379, 120.9656717),  # Cabanatuan City Central Transport Terminal
+]
 
 bus_states = {}
 smooth_waypoints = []
 last_stops_signature = None
+http_session = requests.Session()
 
 
 def detect_active_server() -> str:
@@ -52,7 +76,7 @@ def detect_active_server() -> str:
     while True:
         for url in seen:
             try:
-                res = requests.get(f"{url}/api/stops", timeout=2)
+                res = http_session.get(f"{url}/api/stops", timeout=2)
                 if res.status_code == 200:
                     print(f"Connected to FastAPI Server at: {url}\n")
                     return url
@@ -83,31 +107,73 @@ def smooth_step_fraction(t: float) -> float:
     return 0.35 * t + 0.65 * cosine_ease
 
 
-def fetch_road_path(start_stop: dict, end_stop: dict) -> list:
+def fetch_full_osrm_polyline_nonblocking(stops: list, max_wait_seconds: float = 2.5) -> list:
     """
-    Fetches exact highway geometry between two stops from OSRM.
-    Falls back to a direct line only if there is no internet connection.
+    Fetches the entire route in ONE single OSRM call inside a daemon thread.
+    If SSL handshake stalls on Windows or takes > 2.5 seconds,
+    returns FALLBACK_HIGHWAY_CURVE immediately without freezing.
     """
-    lat1, lng1 = float(start_stop["lat"]), float(start_stop["lng"])
-    lat2, lng2 = float(end_stop["lat"]), float(end_stop["lng"])
-    osrm_url = (
-        f"https://router.project-osrm.org/route/v1/driving/"
-        f"{lng1},{lat1};{lng2},{lat2}?overview=full&geometries=geojson"
-    )
-    try:
-        res = requests.get(osrm_url, headers=HTTP_HEADERS, timeout=4)
-        if res.status_code == 200:
-            data = res.json()
-            routes = data.get("routes", [])
-            if routes:
-                coords = routes[0]["geometry"]["coordinates"]
-                road_pts = [(float(c[1]), float(c[0])) for c in coords]
-                if len(road_pts) >= 2:
-                    return road_pts
-    except requests.exceptions.RequestException:
-        pass
+    result_box = {"pts": None}
 
-    return [(lat1, lng1), (lat2, lng2)]
+    def worker():
+        try:
+            coord_str = ";".join(f"{float(s['lng'])},{float(s['lat'])}" for s in stops)
+            osrm_url = (
+                f"https://router.project-osrm.org/route/v1/driving/"
+                f"{coord_str}?overview=full&geometries=geojson"
+            )
+            res = requests.get(
+                osrm_url,
+                headers={"User-Agent": "BusWatchSimulator/1.0"},
+                timeout=2.0,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                routes = data.get("routes", [])
+                if routes:
+                    coords = routes[0]["geometry"]["coordinates"]
+                    pts = [(float(c[1]), float(c[0])) for c in coords]
+                    if len(pts) >= 2:
+                        result_box["pts"] = pts
+        except Exception:
+            pass
+
+    worker_thread = threading.Thread(target=worker, daemon=True)
+    worker_thread.start()
+    worker_thread.join(timeout=max_wait_seconds)
+
+    if result_box["pts"]:
+        print("Loaded live OpenStreetMap (OSRM) highway geometry!")
+        return result_box["pts"]
+
+    print("OSRM server slow/unreachable — using built-in Nueva Ecija highway geometry!")
+    return FALLBACK_HIGHWAY_CURVE
+
+
+def extract_segment_from_polyline(poly: list, start_stop: dict, end_stop: dict) -> list:
+    """Extracts the exact road section between start_stop and end_stop from the route polyline."""
+    s_lat, s_lng = float(start_stop["lat"]), float(start_stop["lng"])
+    e_lat, e_lng = float(end_stop["lat"]), float(end_stop["lng"])
+    if not poly or len(poly) < 2:
+        return [(s_lat, s_lng), (e_lat, e_lng)]
+
+    s_idx = min(
+        range(len(poly)),
+        key=lambda i: (poly[i][0] - s_lat) ** 2 + (poly[i][1] - s_lng) ** 2,
+    )
+    e_idx = min(
+        range(len(poly)),
+        key=lambda i: (poly[i][0] - e_lat) ** 2 + (poly[i][1] - e_lng) ** 2,
+    )
+
+    if s_idx == e_idx:
+        return [(s_lat, s_lng), (e_lat, e_lng)]
+    elif s_idx < e_idx:
+        mid_pts = poly[s_idx + 1 : e_idx]
+    else:
+        mid_pts = list(reversed(poly[e_idx + 1 : s_idx]))
+
+    return [(s_lat, s_lng)] + mid_pts + [(e_lat, e_lng)]
 
 
 def sample_point_along_road(road_pts: list, cumulative_km: list, target_km: float) -> tuple:
@@ -137,7 +203,7 @@ def build_waypoints_from_server() -> bool:
     """Fetches official stops from /api/stops and builds a road-snapped round-trip loop."""
     global smooth_waypoints, last_stops_signature
     try:
-        res = requests.get(f"{SERVER_URL}/api/stops", timeout=3)
+        res = http_session.get(f"{SERVER_URL}/api/stops", timeout=3)
         if res.status_code != 200:
             return False
 
@@ -145,21 +211,25 @@ def build_waypoints_from_server() -> bool:
         if len(stops) < 2:
             return False
 
-        last_stops_signature = tuple((s["stop_id"], round(float(s["lat"]), 5), round(float(s["lng"]), 5)) for s in stops)
+        last_stops_signature = tuple(
+            (s["stop_id"], round(float(s["lat"]), 5), round(float(s["lng"]), 5))
+            for s in stops
+        )
 
         first_stop_id = stops[0]["stop_id"]
         last_stop_id = stops[-1]["stop_id"]
 
-        # Round-trip ping-pong order: Stop 1 -> Stop N -> Stop 1
+        print("Building road-snapped highway path...")
+        master_polyline = fetch_full_osrm_polyline_nonblocking(stops, max_wait_seconds=2.5)
+
         full_cycle = stops + list(reversed(stops[1:-1]))
         waypoints = []
 
-        print("Building road-snapped highway path from OpenStreetMap (OSRM)...")
         for i in range(len(full_cycle)):
             start_stop = full_cycle[i]
             end_stop = full_cycle[(i + 1) % len(full_cycle)]
 
-            road_pts = fetch_road_path(start_stop, end_stop)
+            road_pts = extract_segment_from_polyline(master_polyline, start_stop, end_stop)
 
             cumulative_km = [0.0]
             for j in range(1, len(road_pts)):
@@ -230,7 +300,7 @@ def find_closest_waypoint_index(lat: float, lng: float) -> int:
 
 def post_bus_position(bus_data: dict, lat: float, lng: float) -> bool:
     """Sends the updated GPS coordinates to the FastAPI server and checks for errors."""
-    res = requests.post(
+    res = http_session.post(
         f"{SERVER_URL}/api/buses/update",
         json={
             "bus_id": bus_data["bus_id"],
@@ -264,10 +334,9 @@ def run_simulation():
 
     while True:
         try:
-            # Periodically check if Dispatcher added or removed stops
             tick_counter += 1
             if tick_counter % 5 == 0:
-                stops_res = requests.get(f"{SERVER_URL}/api/stops", timeout=2)
+                stops_res = http_session.get(f"{SERVER_URL}/api/stops", timeout=2)
                 if stops_res.status_code == 200:
                     current_sig = tuple(
                         (s["stop_id"], round(float(s["lat"]), 5), round(float(s["lng"]), 5))
@@ -278,7 +347,7 @@ def run_simulation():
                         build_waypoints_from_server()
                         bus_states.clear()
 
-            res = requests.get(f"{SERVER_URL}/api/buses", timeout=3)
+            res = http_session.get(f"{SERVER_URL}/api/buses", timeout=3)
             if res.status_code != 200:
                 time.sleep(2)
                 continue
@@ -334,7 +403,7 @@ def run_simulation():
                             state["expected_lng"] = wp["lng"]
 
                         if wp["at_stop_id"] is not None:
-                            requests.post(
+                            http_session.post(
                                 f"{SERVER_URL}/api/tickets/dropoff",
                                 json={
                                     "bus_id": bus_id,

@@ -20,7 +20,7 @@
           </button>
           @if (loggedInUser) {
             <span class="user-pill">{{ loggedInUser.full_name }}</span>
-            <button type="button" class="pink-btn small-btn" (click)="logout()">Log Out</button>
+            <button type="button" class="pink-btn small-btn" (click)="confirmAndLogout()">Log Out</button>
           }
         </div>
       </div>
@@ -211,7 +211,7 @@
             <div class="fare-highlight">
               <div class="fare-item">
                 <span class="fare-caption">Regular Fare</span>
-                <strong class="fare-price">₱{{ getPassengerRegularFare().toFixed(2) }}</strong>
+                <strong class="fare-price">₱{{ Math.round(getPassengerRegularFare()).toFixed(2) }}</strong>
               </div>
               <div class="fare-divider"></div>
               <div class="fare-item">
@@ -278,52 +278,84 @@
         <div id="passengerMap"></div>
       </div>
 
-      <!-- STEP 3: APPROACHING MINI-BUSES (CLOSEST PINNED FIRST) -->
-      <div class="section-header">
-        <h2 class="card-title" style="margin-bottom: 2px;">Approaching Mini-Buses (Closest First)</h2>
-        <p class="helper-text">The mini-bus closest to your waiting location is automatically pinned at the top.</p>
+      <!-- STEP 3: APPROACHING MINI-BUSES (COMPACT & EXPANDABLE) -->
+      <div
+        class="section-header collapsible-section-header"
+        role="button"
+        tabindex="0"
+        (click)="toggleBusList()"
+        (keydown.enter)="toggleBusList()"
+      >
+        <div>
+          <h2 class="card-title" style="margin-bottom: 2px;">
+            Approaching Mini-Buses ({{ buses.length }})
+          </h2>
+          <p class="helper-text" style="margin-bottom: 0;">
+            Tap a bus for details, or tap here to {{ showBusList ? 'minimize' : 'expand' }} the list.
+          </p>
+        </div>
+        <span class="expand-chevron">{{ showBusList ? '▲' : '▼' }}</span>
       </div>
 
-      @for (b of getSortedBuses(); track b.bus_id; let idx = $index) {
-        <div class="theme-card bus-card" [class.top-bus-card]="idx === 0">
-          @if (idx === 0) {
-            <div class="next-ride-ribbon">NEXT MINI-BUS FOR YOUR LOCATION</div>
-          }
+      @if (showBusList) {
+        @for (b of getSortedBuses(); track b.bus_id; let idx = $index) {
+          <div
+            class="theme-card bus-card compact-bus-card"
+            [class.top-bus-card]="idx === 0"
+            role="button"
+            tabindex="0"
+            (click)="toggleBusCard(b.bus_id, idx)"
+            (keydown.enter)="toggleBusCard(b.bus_id, idx)"
+          >
+            @if (idx === 0) {
+              <div class="next-ride-ribbon">{{ getTopRibbonLabel(b) }}</div>
+            }
 
-          <div class="bus-header">
-            <div>
-              <h3 class="bus-title">{{ b.bus_id }} (Plate: {{ b.plate_number }})</h3>
-              <p class="crew-text">
-                <b>Driver:</b> {{ b.driver_name }} &nbsp;|&nbsp; <b>Conductor:</b> {{ b.conductor_name }}
-              </p>
+            <!-- Minimized Summary Row (Always Visible) -->
+            <div class="bus-compact-row">
+              <div class="bus-compact-main">
+                <h3 class="bus-title">{{ b.bus_id }}</h3>
+                <div class="bus-compact-eta">{{ computeEtaBadge(b) }}</div>
+              </div>
+              <div class="bus-compact-right">
+                <span
+                  class="status-pill compact-pill"
+                  [ngClass]="{
+                    'status-available': b.status === 'Seats Available',
+                    'status-standing': b.status === 'Standing Only',
+                    'status-full': b.status === 'Full Capacity'
+                  }"
+                >
+                  {{ b.available_seats }} free
+                </span>
+                <span class="card-arrow">{{ isBusExpanded(b.bus_id, idx) ? '▲' : '▼' }}</span>
+              </div>
             </div>
-            <span
-              class="status-pill"
-              [ngClass]="{
-                'status-available': b.status === 'Seats Available',
-                'status-standing': b.status === 'Standing Only',
-                'status-full': b.status === 'Full Capacity'
-              }"
-            >
-              {{ b.status }}
-            </span>
-          </div>
 
-          <div class="eta-banner">
-            <b>Arrival Status:</b> {{ computeEtaBadge(b) }}
-          </div>
+            <!-- Expanded Details (Auto-Expanded for Top Bus, Toggleable for All) -->
+            @if (isBusExpanded(b.bus_id, idx)) {
+              <div class="bus-expanded-details">
+                <p class="crew-text">
+                  <b>Plate:</b> {{ b.plate_number }} &nbsp;|&nbsp; <b>Status:</b> {{ b.status }}
+                </p>
+                <p class="crew-text" style="margin-bottom: 10px;">
+                  <b>Driver:</b> {{ b.driver_name }} &nbsp;|&nbsp; <b>Conductor:</b> {{ b.conductor_name }}
+                </p>
 
-          <div class="capacity-grid">
-            <div class="capacity-box">
-              <span class="cap-label">Seats Available</span>
-              <strong class="cap-value">{{ b.available_seats }} of {{ b.max_seated }}</strong>
-            </div>
-            <div class="capacity-box">
-              <span class="cap-label">Standing Passengers</span>
-              <strong class="cap-value">{{ b.standing_count }} of {{ b.max_standing }}</strong>
-            </div>
+                <div class="capacity-grid">
+                  <div class="capacity-box">
+                    <span class="cap-label">Seats Available</span>
+                    <strong class="cap-value">{{ b.available_seats }} of {{ b.max_seated }}</strong>
+                  </div>
+                  <div class="capacity-box">
+                    <span class="cap-label">Standing Passengers</span>
+                    <strong class="cap-value">{{ b.standing_count }} of {{ b.max_standing }}</strong>
+                  </div>
+                </div>
+              </div>
+            }
           </div>
-        </div>
+        }
       }
 
       <!-- STEP 4: CATEGORIZED PASSENGER FEEDBACK & LOST ITEM REPORTING -->

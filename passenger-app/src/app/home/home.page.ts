@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import type { OnDestroy, OnInit } from '@angular/core';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IonContent, IonHeader, IonToolbar } from '@ionic/angular';
 import * as L from 'leaflet';
@@ -72,6 +72,7 @@ const Geolocation = {
 })
 export class HomePage implements OnInit, OnDestroy {
   protected readonly Math = Math;
+  private cdr = inject(ChangeDetectorRef);
 
   serverUrl: string = 'http://192.168.1.8:8000';
   authMode: 'login' | 'signup' = 'login';
@@ -117,6 +118,26 @@ export class HomePage implements OnInit, OnDestroy {
   private watchId: string | null = null;
   showServerConfig: boolean = false;
   mapSearchQuery: string = '';
+  showBusList: boolean = true; // Set to false if you want the entire section collapsed by default
+  expandedBusIds: { [key: string]: boolean } = {};
+
+  toggleBusList(): void {
+    this.showBusList = !this.showBusList;
+    this.cdr.detectChanges();
+  }
+
+  toggleBusCard(busId: string, idx: number): void {
+    const currentlyExpanded = this.isBusExpanded(busId, idx);
+    this.expandedBusIds[busId] = !currentlyExpanded;
+    this.cdr.detectChanges();
+  }
+
+  isBusExpanded(busId: string, idx: number): boolean {
+    if (busId in this.expandedBusIds) {
+      return this.expandedBusIds[busId];
+    }
+    return idx === 0; // Automatically expands the #1 bus at the top
+  }
 
   async searchLocationOnMap(): Promise<void> {
     const q = this.mapSearchQuery.trim();
@@ -291,7 +312,13 @@ export class HomePage implements OnInit, OnDestroy {
       setTimeout(() => {
         this.initMap();
         this.syncAll();
-        this.pollTimer = setInterval(() => this.syncBuses(), 2500);
+        this.pollTimer = setInterval(() => {
+          this.syncBuses();
+          this.stopPollCounter++;
+          if (this.stopPollCounter % 4 === 0) {
+            this.checkIfStopsUpdated();
+          }
+        }, 2500);
       }, 250);
     } catch {
       this.authMessage = `Cannot connect to ${this.serverUrl}. Please check the Server IP box above.`;
@@ -510,80 +537,82 @@ export class HomePage implements OnInit, OnDestroy {
   }
 
   async syncBuses(): Promise<void> {
-    try {
-      const res = await fetch(`${this.serverUrl}/api/buses`);
-      const incomingBuses: any[] = await res.json();
-      const now = Date.now();
+  try {
+    const res = await fetch(`${this.serverUrl}/api/buses`, { cache: 'no-store' });
+    const incomingBuses: any[] = await res.json();
+    const now = Date.now();
 
-      incomingBuses.forEach((b) => {
-        const curLat = Number(b.lat);
-        const curLng = Number(b.lng);
-        const prev = this.busVectors[b.bus_id];
+    incomingBuses.forEach((b) => {
+      const curLat = Number(b.lat);
+      const curLng = Number(b.lng);
+      const prev = this.busVectors[b.bus_id];
 
-        if (!prev) {
+      if (!prev) {
+        this.busVectors[b.bus_id] = {
+          lat: curLat,
+          lng: curLng,
+          dLat: 0,
+          dLng: 0,
+          timestamp: now,
+          speedKmh: 28.0,
+        };
+      } else {
+        const distStepKm = this.haversineKm(prev.lat, prev.lng, curLat, curLng);
+        const elapsedHours = (now - prev.timestamp) / 3600000;
+
+        if (distStepKm > 0.002 && elapsedHours > 0) {
+          const rawSpeed = distStepKm / elapsedHours;
+          const clampedSpeed = Math.min(75.0, Math.max(8.0, rawSpeed));
+          const smoothedSpeed = prev.speedKmh * 0.6 + clampedSpeed * 0.4;
+
           this.busVectors[b.bus_id] = {
             lat: curLat,
             lng: curLng,
-            dLat: 0,
-            dLng: 0,
+            dLat: curLat - prev.lat,
+            dLng: curLng - prev.lng,
             timestamp: now,
-            speedKmh: 28.0,
+            speedKmh: smoothedSpeed,
           };
-        } else {
-          const distStepKm = this.haversineKm(prev.lat, prev.lng, curLat, curLng);
-          const elapsedHours = (now - prev.timestamp) / 3600000;
-
-          if (distStepKm > 0.002 && elapsedHours > 0) {
-            const rawSpeed = distStepKm / elapsedHours;
-            const clampedSpeed = Math.min(75.0, Math.max(8.0, rawSpeed));
-            const smoothedSpeed = prev.speedKmh * 0.6 + clampedSpeed * 0.4;
-
-            this.busVectors[b.bus_id] = {
-              lat: curLat,
-              lng: curLng,
-              dLat: curLat - prev.lat,
-              dLng: curLng - prev.lng,
-              timestamp: now,
-              speedKmh: smoothedSpeed,
-            };
-          }
         }
+      }
+    });
+
+    this.buses = [...incomingBuses];
+    this.cdr.detectChanges(); // Forces Approaching Mini-Buses cards & ETAs to repaint immediately
+
+    if (!this.map) return;
+
+    const activeIds = new Set(this.buses.map((b) => b.bus_id));
+    Object.keys(this.busMarkers).forEach((id) => {
+      if (!activeIds.has(id)) {
+        this.map?.removeLayer(this.busMarkers[id]);
+        delete this.busMarkers[id];
+      }
+    });
+
+    this.buses.forEach((b) => {
+      const html = `<div style="background:#B47792;color:#fff;padding:4px 8px;border-radius:10px;font-weight:700;font-size:12px;border:2px solid #FA9EBC;white-space:nowrap;">${b.bus_id} (${b.available_seats} free)</div>`;
+      const icon = L.divIcon({
+        html,
+        className: '',
+        iconSize: [120, 26],
+        iconAnchor: [62, 13],
       });
 
-      this.buses = incomingBuses;
-      if (!this.map) return;
+      const popupHtml = `<b>${b.bus_id} (${b.plate_number})</b><br>Driver: ${b.driver_name}<br>Conductor: ${b.conductor_name}<br>Status: ${b.status}`;
 
-      const activeIds = new Set(this.buses.map((b) => b.bus_id));
-      Object.keys(this.busMarkers).forEach((id) => {
-        if (!activeIds.has(id)) {
-          this.map?.removeLayer(this.busMarkers[id]);
-          delete this.busMarkers[id];
-        }
-      });
-
-      this.buses.forEach((b) => {
-        const html = `<div style="background:#B47792;color:#fff;padding:4px 8px;border-radius:10px;font-weight:700;font-size:12px;border:2px solid #FA9EBC;white-space:nowrap;">${b.bus_id} (${b.available_seats} free)</div>`;
-        const icon = L.divIcon({
-          html,
-          className: '',
-          iconSize: [120, 26],
-          iconAnchor: [62, 13],
-        });
-
-        const popupHtml = `<b>${b.bus_id} (${b.plate_number})</b><br>Driver: ${b.driver_name}<br>Conductor: ${b.conductor_name}<br>Status: ${b.status}`;
-
-        if (this.busMarkers[b.bus_id]) {
-          this.busMarkers[b.bus_id].setLatLng([b.lat, b.lng]).setIcon(icon).setPopupContent(popupHtml);
-        } else {
-          this.busMarkers[b.bus_id] = L.marker([b.lat, b.lng], { icon })
-            .addTo(this.map!)
-            .bindPopup(popupHtml);
-        }
-      });
-    } catch {
-      // Ignore transient polling errors
-    }
+      if (this.busMarkers[b.bus_id]) {
+        this.busMarkers[b.bus_id].setLatLng([b.lat, b.lng]).setIcon(icon).setPopupContent(popupHtml);
+      } else {
+        this.busMarkers[b.bus_id] = L.marker([b.lat, b.lng], { icon })
+          .addTo(this.map!)
+          .bindPopup(popupHtml);
+      }
+    });
+  } catch {
+    // Ignore transient polling errors
   }
+}
 
   focusStop(s: any): void {
     this.selectedStopId = s.stop_id;
@@ -642,83 +671,108 @@ export class HomePage implements OnInit, OnDestroy {
     return 15.0 + Math.max(0, dist - 4.0) * 2.5763;
   }
 
-  computeEtaBadge(b: any): string {
+  getBusStatusInfo(b: any): { priority: number; badge: string } {
     const origin = this.getActiveOrigin();
     const dest = this.stops.find((s) => s.stop_id === Number(this.destinationStopId));
-    if (!origin) return 'Calculating arrival...';
+    if (!origin) {
+      return { priority: 1, badge: 'Calculating arrival...' };
+    }
 
     const curLat = Number(b.lat);
     const curLng = Number(b.lng);
     const stopLat = Number(origin.lat);
-    const dist = this.haversineKm(curLat, curLng, stopLat, Number(origin.lng));
+    const stopLng = Number(origin.lng);
+    const dist = this.haversineKm(curLat, curLng, stopLat, stopLng);
 
-    if (dist <= 0.18) {
-      return `Arrived at ${origin.stop_name} now!`;
-    }
-
+    const hasValidTrip = !!(dest && (origin.stop_id === 0 || origin.stop_id !== dest.stop_id));
     const passengerGoingSouth = this.isPassengerGoingSouth(origin, dest);
-    const busIsSouthOfOrigin = curLat < stopLat - 0.0012;
-    const busIsNorthOfOrigin = curLat > stopLat + 0.0012;
+
+    // Detect terminal turnarounds so buses parked at Bongabon or Cabanatuan reflect their outgoing trip
+    const firstStop = this.stops[0];
+    const lastStop = this.stops[this.stops.length - 1];
+    const atNorthTerminal =
+      !!firstStop && this.haversineKm(curLat, curLng, Number(firstStop.lat), Number(firstStop.lng)) <= 0.2;
+    const atSouthTerminal =
+      !!lastStop && this.haversineKm(curLat, curLng, Number(lastStop.lat), Number(lastStop.lng)) <= 0.2;
 
     const vec = this.busVectors[b.bus_id];
-    const hasMoved = vec && (Math.abs(vec.dLat) > 0.00001 || Math.abs(vec.dLng) > 0.00001);
+    const hasMoved = !!vec && (Math.abs(vec.dLat) > 0.00001 || Math.abs(vec.dLng) > 0.00001);
 
-    if (hasMoved) {
-      const busGoingSouth = vec.dLat < 0;
-      if (dest && origin.stop_id !== dest.stop_id && busGoingSouth !== passengerGoingSouth) {
-        const oppositeLabel = busGoingSouth ? 'Heading to Cabanatuan' : 'Heading to Bongabon';
-        return `Opposite Way (${oppositeLabel} • ${dist.toFixed(1)} km away)`;
-      }
+    let busGoingSouth: boolean | null = null;
+    if (atNorthTerminal) {
+      busGoingSouth = true; // Leaving Bongabon -> heading South to Cabanatuan
+    } else if (atSouthTerminal) {
+      busGoingSouth = false; // Leaving Cabanatuan -> heading North to Bongabon
+    } else if (hasMoved) {
+      // Along Bongabon (NE) to Cabanatuan (SW), (lat + lng) decreases when heading South
+      busGoingSouth = vec.dLat + vec.dLng < 0;
     }
 
-    if ((passengerGoingSouth && busIsSouthOfOrigin) || (!passengerGoingSouth && busIsNorthOfOrigin)) {
-      return `Missed Bus (${dist.toFixed(1)} km away from your area)`;
+    // Priority 3 (Lowest): Opposite Direction — checked FIRST so nearby wrong-way buses never jump to the top
+    if (hasValidTrip && busGoingSouth !== null && busGoingSouth !== passengerGoingSouth) {
+      const oppositeLabel = busGoingSouth ? 'Heading to Cabanatuan' : 'Heading to Bongabon';
+      return {
+        priority: 3,
+        badge: `Opposite Way (${oppositeLabel} • ${dist.toFixed(1)} km away)`,
+      };
     }
 
+    // Priority 0 (Highest): Arrived at the passenger's waiting stop going the right direction
+    if (dist <= 0.18) {
+      return {
+        priority: 0,
+        badge: `Arrived at ${origin.stop_name} now!`,
+      };
+    }
+
+    // Priority 2: Already passed the passenger's waiting stop (going the same direction)
+    const busPosScore = curLat + curLng;
+    const stopPosScore = stopLat + stopLng;
+    const busPassedGoingSouth = passengerGoingSouth && busPosScore < stopPosScore - 0.002;
+    const busPassedGoingNorth = !passengerGoingSouth && busPosScore > stopPosScore + 0.002;
+
+    if (hasValidTrip && (busPassedGoingSouth || busPassedGoingNorth)) {
+      return {
+        priority: 2,
+        badge: `Missed Bus (${dist.toFixed(1)} km past your stop)`,
+      };
+    }
+
+    // Priority 1: Approaching the passenger in their direction of travel
     const liveSpeedKmh = vec && vec.speedKmh >= 5 ? vec.speedKmh : 28.0;
     const mins = Math.max(1, Math.round((dist / liveSpeedKmh) * 60));
-    return `Arriving in ~${mins} mins (${dist.toFixed(1)} km away)`;
+    return {
+      priority: 1,
+      badge: `Arriving in ~${mins} mins (${dist.toFixed(1)} km away)`,
+    };
   }
 
-  private getBusSortPriority(b: any, origin: any, dest: any, passengerGoingSouth: boolean): number {
-    const curLat = Number(b.lat);
-    const curLng = Number(b.lng);
-    const stopLat = Number(origin.lat);
-    const dist = this.haversineKm(curLat, curLng, stopLat, Number(origin.lng));
+  computeEtaBadge(b: any): string {
+    return this.getBusStatusInfo(b).badge;
+  }
 
-    if (dist <= 0.18) return 0;
-
-    const vec = this.busVectors[b.bus_id];
-    const hasMoved = vec && (Math.abs(vec.dLat) > 0.00001 || Math.abs(vec.dLng) > 0.00001);
-    if (hasMoved) {
-      const busGoingSouth = vec.dLat < 0;
-      if (dest && origin.stop_id !== dest.stop_id && busGoingSouth !== passengerGoingSouth) {
-        return 2;
-      }
+  getTopRibbonLabel(b: any): string {
+    const priority = this.getBusStatusInfo(b).priority;
+    if (priority === 3) {
+      return 'ALL BUSES CURRENTLY HEADING OPPOSITE WAY';
     }
-
-    const busIsSouthOfOrigin = curLat < stopLat - 0.0012;
-    const busIsNorthOfOrigin = curLat > stopLat + 0.0012;
-    if ((passengerGoingSouth && busIsSouthOfOrigin) || (!passengerGoingSouth && busIsNorthOfOrigin)) {
-      return 3;
+    if (priority === 2) {
+      return 'NO APPROACHING BUS — NEXT LOOP';
     }
-
-    return 1;
+    return 'NEXT MINI-BUS FOR YOUR LOCATION';
   }
 
   getSortedBuses(): any[] {
     if (!this.buses) return [];
     const origin = this.getActiveOrigin();
-    const dest = this.stops.find((s) => s.stop_id === Number(this.destinationStopId));
     if (!origin) return this.buses;
 
-    const passengerGoingSouth = this.isPassengerGoingSouth(origin, dest);
     const stopLat = Number(origin.lat);
     const stopLng = Number(origin.lng);
 
     return [...this.buses].sort((a, b) => {
-      const priorityA = this.getBusSortPriority(a, origin, dest, passengerGoingSouth);
-      const priorityB = this.getBusSortPriority(b, origin, dest, passengerGoingSouth);
+      const priorityA = this.getBusStatusInfo(a).priority;
+      const priorityB = this.getBusStatusInfo(b).priority;
 
       if (priorityA !== priorityB) {
         return priorityA - priorityB;

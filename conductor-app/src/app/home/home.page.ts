@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import type { OnDestroy, OnInit } from '@angular/core';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Geolocation } from '@capacitor/geolocation';
 import { IonContent, IonHeader, IonToolbar } from '@ionic/angular';
@@ -41,6 +41,8 @@ export class HomePage implements OnInit, OnDestroy {
     total_fare_collected: 0,
   };
 
+  private cdr = inject(ChangeDetectorRef);
+
   gpsStatus: string = 'GPS Standby';
   private gpsTimer?: any;
 
@@ -66,6 +68,16 @@ export class HomePage implements OnInit, OnDestroy {
   }
 
   confirmAndIssueTicket(): void {
+    if (Number(this.originStopId) === Number(this.destStopId)) {
+      alert('Please select a different Origin Stop and Destination Stop.');
+      return;
+    }
+    const maxCap = (this.activeBus?.max_seated || 30) + (this.activeBus?.max_standing || 15);
+    const currentPax = this.activeBus?.current_passengers || 0;
+    if (currentPax + this.passengerCount > maxCap) {
+      alert(`Cannot issue ticket: Bus has reached maximum capacity (${currentPax}/${maxCap} passengers).`);
+      return;
+    }
     if (confirm(`Are you sure you want to issue this ticket for ${this.passengerCount} passenger(s)?`)) {
       this.issueTicket();
     }
@@ -280,29 +292,31 @@ export class HomePage implements OnInit, OnDestroy {
   }
 
   async refreshAll(): Promise<void> {
-    try {
-      const resStops = await fetch(`${this.serverUrl}/api/stops`);
-      this.stops = (await resStops.json()).sort(
-        (a: any, b: any) => (Number(b.lat) + Number(b.lng)) - (Number(a.lat) + Number(a.lng))
-      );
+  try {
+    const resStops = await fetch(`${this.serverUrl}/api/stops`, { cache: 'no-store' });
+    this.stops = (await resStops.json()).sort(
+      (a: any, b: any) => (Number(b.lat) + Number(b.lng)) - (Number(a.lat) + Number(a.lng))
+    );
 
-      const resBuses = await fetch(`${this.serverUrl}/api/buses`);
-      const buses = await resBuses.json();
-      this.availableBuses = buses;
-      this.activeBus = buses.find((b: any) => b.bus_id === this.selectedBusId) || buses[0];
+    const resBuses = await fetch(`${this.serverUrl}/api/buses`, { cache: 'no-store' });
+    const buses = await resBuses.json();
+    this.availableBuses = buses;
+    this.activeBus = buses.find((b: any) => b.bus_id === this.selectedBusId) || buses[0];
 
-      const resDrop = await fetch(`${this.serverUrl}/api/tickets/dropoffs/${this.selectedBusId}`);
-      this.dropoffs = await resDrop.json();
+    const resDrop = await fetch(`${this.serverUrl}/api/tickets/dropoffs/${this.selectedBusId}`, { cache: 'no-store' });
+    this.dropoffs = await resDrop.json();
 
-      const resRem = await fetch(`${this.serverUrl}/api/remittance?bus_id=${this.selectedBusId}`);
-      const remList = await resRem.json();
-      if (remList.length > 0) {
-        this.remittance = remList[0];
-      }
-    } catch {
-      // Ignore transient polling errors
+    const resRem = await fetch(`${this.serverUrl}/api/remittance?bus_id=${this.selectedBusId}`, { cache: 'no-store' });
+    const remList = await resRem.json();
+    if (remList.length > 0) {
+      this.remittance = remList[0];
     }
+
+    this.cdr.detectChanges();
+  } catch {
+    // Ignore transient polling errors
   }
+}
 
   haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371;
@@ -340,7 +354,6 @@ export class HomePage implements OnInit, OnDestroy {
   async issueTicket(): Promise<void> {
     this.ticketSuccessMsg = '';
     const count = Math.max(1, Number(this.passengerCount || 1));
-    const total = this.formatMoney(this.previewTotalFare());
     const res = await fetch(`${this.serverUrl}/api/tickets/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -353,10 +366,14 @@ export class HomePage implements OnInit, OnDestroy {
         passenger_count: count,
       }),
     });
+    const data = await res.json();
     if (res.ok) {
-      this.ticketSuccessMsg = `Ticket Issued! +${count} Passenger(s) Boarded (₱${total})`;
+      const savedTotal = this.formatMoney(data.total_fare);
+      this.ticketSuccessMsg = `Ticket Issued! +${count} Passenger(s) Boarded (₱${savedTotal})`;
       this.passengerCount = 1;
       await this.refreshAll();
+    } else {
+      alert(data.detail || 'Could not issue ticket. Please check your selected stops and bus capacity.');
     }
   }
 

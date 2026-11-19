@@ -456,3 +456,83 @@ ion-content {
   font-weight: 700;
   margin-top: 10px;
 }
+
+.collapsible-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: #FFFFFF;
+  border: 2px solid #B47792;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 16px 0 10px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.expand-chevron {
+  font-size: 14px;
+  font-weight: 800;
+  color: #B47792;
+  background: #FFDBD1;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compact-bus-card {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bus-compact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.bus-compact-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bus-compact-eta {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2D262B;
+  margin-top: 2px;
+}
+
+.bus-compact-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.compact-pill {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.card-arrow {
+  font-size: 12px;
+  font-weight: 800;
+  color: #B47792;
+}
+
+.bus-expanded-details {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1.5px dashed #FA9EBC;
+}
