@@ -642,7 +642,7 @@ def main(page: ft.Page):
                 shift_driver_input.value = ""
                 shift_conductor_input.value = ""
             live_occupancy_banner.content.value = (
-                "No active mini-buses available. Set a unit to Active in Tab 2 (Permanent Fleet Vehicles)."
+                "No active mini-buses available. Set a unit to Active in Tab 2 (Vehicles)."
             )
             logs_table.rows.clear()
         page.update()
@@ -1294,7 +1294,7 @@ def main(page: ft.Page):
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                     controls=[
                         ft.Text(
-                            "Register New Mini-Bus Unit or Edit Permanent Vehicle Specs",
+                            "Register New Mini-Bus Unit or Edit Vehicle Specs",
                             size=18,
                             weight=ft.FontWeight.BOLD,
                             color=ACCENT_MAUVE,
@@ -1302,7 +1302,7 @@ def main(page: ft.Page):
                         ft.Row([reg_bus_id, reg_plate, reg_operator]),
                         ft.Row([reg_driver, reg_conductor, reg_seated, reg_standing]),
                         ft.Button(
-                            "Save Permanent Mini-Bus Profile to Fleet",
+                            "Save Mini-Bus Profile to Fleet",
                             icon=ft.Icons.DIRECTIONS_BUS,
                             height=48,
                             on_click=register_bus_click,
@@ -1345,7 +1345,7 @@ def main(page: ft.Page):
         on_click=lambda _: switch_tab("dispatch"),
     )
     tab_btn_fleet = ft.Button(
-        "2. Permanent Fleet Vehicles",
+        "2. Fleet Vehicles",
         icon=ft.Icons.DIRECTIONS_BUS,
         height=48,
         expand=True,
