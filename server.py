@@ -538,10 +538,13 @@ def update_bus(payload: BusUpdatePayload, db: Session = Depends(get_db)):
     bus.route_name = payload.route_name
     bus.lat = payload.lat
     bus.lng = payload.lng
-    bus.current_passengers = max(0, payload.current_passengers)
-    bus.max_seated = payload.max_seated
-    bus.max_standing = payload.max_standing
 
+    # GPS Simulator should only update coordinates, never overwrite live ticketed passenger counts
+    if payload.event_source != "GPS Simulator":
+        bus.current_passengers = max(0, payload.current_passengers)
+        bus.max_seated = payload.max_seated
+        bus.max_standing = payload.max_standing
+        
     avail, standing, status = compute_capacity(bus.current_passengers, bus.max_seated, bus.max_standing)
     bus.status = status
     bus.updated_at = datetime.now()
@@ -1067,6 +1070,13 @@ def get_live_leaflet_map():
                     badge.style.background = '#ffcdd2';
                     badge.style.color = '#b71c1c';
                     await loadRoadRoute();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    const msg = err.detail || 'Cannot remove this stop.';
+                    badge.textContent = msg;
+                    badge.style.background = '#ffcdd2';
+                    badge.style.color = '#b71c1c';
+                    alert(msg);
                 }
             }
 
